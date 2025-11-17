@@ -19,6 +19,11 @@ provider "aws" {
   region = "ap-northeast-1"
 }
 
+# 현재 계정 ID
+data "aws_caller_identity" "current" {
+  provider = aws.seoul
+}
+
 # Seoul Transit Gateway 데이터 소스
 data "aws_ec2_transit_gateway" "seoul" {
   provider = aws.seoul
@@ -26,6 +31,11 @@ data "aws_ec2_transit_gateway" "seoul" {
   filter {
     name   = "tag:Name"
     values = ["seoul-main-tgw"]
+  }
+
+  filter {
+    name   = "state"
+    values = ["available"]
   }
 }
 
@@ -37,9 +47,14 @@ data "aws_ec2_transit_gateway" "tokyo" {
     name   = "tag:Name"
     values = ["tokyo-main-tgw"]
   }
+
+  filter {
+    name   = "state"
+    values = ["available"]
+  }
 }
 
-# Transit Gateway Peering Attachment (Seoul에서 Tokyo로 요청)
+# Transit Gateway Peering Attachment (Seoul → Tokyo)
 resource "aws_ec2_transit_gateway_peering_attachment" "seoul_to_tokyo" {
   provider = aws.seoul
 
@@ -54,7 +69,7 @@ resource "aws_ec2_transit_gateway_peering_attachment" "seoul_to_tokyo" {
   }
 }
 
-# Peering Attachment Accept (Tokyo에서 수락)
+# Peering Attachment Accept (Tokyo)
 resource "aws_ec2_transit_gateway_peering_attachment_accepter" "tokyo_accept" {
   provider = aws.tokyo
 
@@ -66,13 +81,8 @@ resource "aws_ec2_transit_gateway_peering_attachment_accepter" "tokyo_accept" {
   }
 }
 
-# 현재 계정 ID 가져오기
-data "aws_caller_identity" "current" {
-  provider = aws.seoul
-}
-
-# Seoul Transit Gateway Route Table - Tokyo CIDR
-resource "aws_ec2_transit_gateway_route" "seoul_to_tokyo_cidr" {
+# Seoul TGW Routes
+resource "aws_ec2_transit_gateway_route" "seoul_to_tokyo_aws" {
   provider = aws.seoul
 
   destination_cidr_block         = "40.0.0.0/16"
@@ -82,19 +92,7 @@ resource "aws_ec2_transit_gateway_route" "seoul_to_tokyo_cidr" {
   depends_on = [aws_ec2_transit_gateway_peering_attachment_accepter.tokyo_accept]
 }
 
-# Tokyo Transit Gateway Route Table - Seoul CIDR
-resource "aws_ec2_transit_gateway_route" "tokyo_to_seoul_cidr" {
-  provider = aws.tokyo
-
-  destination_cidr_block         = "20.0.0.0/16"
-  transit_gateway_attachment_id  = aws_ec2_transit_gateway_peering_attachment.seoul_to_tokyo.id
-  transit_gateway_route_table_id = data.aws_ec2_transit_gateway.tokyo.association_default_route_table_id
-
-  depends_on = [aws_ec2_transit_gateway_peering_attachment_accepter.tokyo_accept]
-}
-
-# Seoul Transit Gateway Route Table - Tokyo IDC CIDR
-resource "aws_ec2_transit_gateway_route" "seoul_to_tokyo_idc_cidr" {
+resource "aws_ec2_transit_gateway_route" "seoul_to_tokyo_idc" {
   provider = aws.seoul
 
   destination_cidr_block         = "30.0.0.0/16"
@@ -104,8 +102,18 @@ resource "aws_ec2_transit_gateway_route" "seoul_to_tokyo_idc_cidr" {
   depends_on = [aws_ec2_transit_gateway_peering_attachment_accepter.tokyo_accept]
 }
 
-# Tokyo Transit Gateway Route Table - Seoul IDC CIDR
-resource "aws_ec2_transit_gateway_route" "tokyo_to_seoul_idc_cidr" {
+# Tokyo TGW Routes
+resource "aws_ec2_transit_gateway_route" "tokyo_to_seoul_aws" {
+  provider = aws.tokyo
+
+  destination_cidr_block         = "20.0.0.0/16"
+  transit_gateway_attachment_id  = aws_ec2_transit_gateway_peering_attachment.seoul_to_tokyo.id
+  transit_gateway_route_table_id = data.aws_ec2_transit_gateway.tokyo.association_default_route_table_id
+
+  depends_on = [aws_ec2_transit_gateway_peering_attachment_accepter.tokyo_accept]
+}
+
+resource "aws_ec2_transit_gateway_route" "tokyo_to_seoul_idc" {
   provider = aws.tokyo
 
   destination_cidr_block         = "10.0.0.0/16"

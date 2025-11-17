@@ -13,6 +13,8 @@ TUNNEL1_PSK="${tunnel1_psk}"
 TUNNEL2_PSK="${tunnel2_psk}"
 LOCAL_CIDR="${local_cidr}"
 REMOTE_CIDR="${remote_cidr}"
+SEOUL_AWS_CIDR="${seoul_aws_cidr}"
+SEOUL_IDC_CIDR="${seoul_idc_cidr}"
 
 # IP 포워딩 활성화
 echo "net.ipv4.ip_forward = 1" >> /etc/sysctl.conf
@@ -88,6 +90,12 @@ iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
 iptables -I FORWARD 1 -s $LOCAL_CIDR -d $REMOTE_CIDR -j ACCEPT
 iptables -I FORWARD 2 -s $REMOTE_CIDR -d $LOCAL_CIDR -j ACCEPT
 
+# Seoul AWS/IDC와의 트래픽 허용
+iptables -I FORWARD 3 -s $LOCAL_CIDR -d $SEOUL_AWS_CIDR -j ACCEPT
+iptables -I FORWARD 4 -s $SEOUL_AWS_CIDR -d $LOCAL_CIDR -j ACCEPT
+iptables -I FORWARD 5 -s $LOCAL_CIDR -d $SEOUL_IDC_CIDR -j ACCEPT
+iptables -I FORWARD 6 -s $SEOUL_IDC_CIDR -d $LOCAL_CIDR -j ACCEPT
+
 service iptables save
 
 # Libreswan 시작
@@ -99,4 +107,3 @@ sleep 30
 ipsec status
 
 echo "=== VPN 설정 완료 ==="
-

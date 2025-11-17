@@ -149,24 +149,24 @@ resource "aws_security_group" "db" {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = [var.vpc_cidr]
-    description = "SSH from VPC"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "SSH from anywhere"
   }
 
   ingress {
     from_port   = 3306
     to_port     = 3306
     protocol    = "tcp"
-    cidr_blocks = [var.vpc_cidr, "20.0.0.0/16"]
-    description = "MySQL from VPC and AWS VPC"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "MySQL from anywhere"
   }
 
   ingress {
     from_port   = -1
     to_port     = -1
     protocol    = "icmp"
-    cidr_blocks = [var.vpc_cidr, "20.0.0.0/16"]
-    description = "ICMP from VPC and AWS VPC"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "ICMP from anywhere"
   }
 
   egress {

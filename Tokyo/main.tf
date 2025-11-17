@@ -57,6 +57,8 @@ module "idc" {
     tunnel2_psk     = aws_vpn_connection.tokyo_to_idc.tunnel2_preshared_key
     local_cidr      = "30.0.0.0/16"
     remote_cidr     = "40.0.0.0/16"
+    seoul_aws_cidr  = "20.0.0.0/16"
+    seoul_idc_cidr  = "10.0.0.0/16"
   })
   db_config_script = file("${path.module}/scripts/db-setup.sh")
 

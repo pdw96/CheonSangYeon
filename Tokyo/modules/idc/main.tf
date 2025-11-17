@@ -149,7 +149,7 @@ resource "aws_security_group" "db" {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = [var.vpc_cidr]
+    cidr_blocks = ["0.0.0.0/0"]
     description = "SSH from VPC"
   }
 
@@ -157,7 +157,7 @@ resource "aws_security_group" "db" {
     from_port   = 3306
     to_port     = 3306
     protocol    = "tcp"
-    cidr_blocks = [var.vpc_cidr, "40.0.0.0/16"]
+    cidr_blocks = ["0.0.0.0/0"]
     description = "MySQL from VPC and AWS VPC"
   }
 
@@ -165,7 +165,7 @@ resource "aws_security_group" "db" {
     from_port   = -1
     to_port     = -1
     protocol    = "icmp"
-    cidr_blocks = [var.vpc_cidr, "40.0.0.0/16"]
+    cidr_blocks = ["0.0.0.0/0"]
     description = "ICMP from VPC and AWS VPC"
   }
 
