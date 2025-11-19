@@ -1,6 +1,10 @@
 # Terraform
 .terraform/
+*.tfstate
 *.tfstate.*
+*.tfplan
+*.tfplan.*
+current-state.json
 .terraform.lock.hcl
 
 # Crash log files
