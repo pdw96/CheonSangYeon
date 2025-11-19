@@ -1,5 +1,66 @@
 # IDC Module - VPC and Network Resources
 
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
+# IAM Role for EC2 instances to access AWS services
+resource "aws_iam_role" "ec2_role" {
+  name = "${var.environment}-ec2-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name = "${var.environment}-ec2-role"
+  }
+}
+
+# Attach EC2 describe policy
+resource "aws_iam_role_policy" "ec2_describe" {
+  name = "${var.environment}-ec2-describe-policy"
+  role = aws_iam_role.ec2_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ec2:DescribeInstances",
+          "ec2:DescribeTags"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# IAM Instance Profile
+resource "aws_iam_instance_profile" "ec2_profile" {
+  name = "${var.environment}-ec2-profile"
+  role = aws_iam_role.ec2_role.name
+
+  tags = {
+    Name = "${var.environment}-ec2-profile"
+  }
+}
+
 resource "aws_vpc" "main" {
   cidr_block           = var.vpc_cidr
   enable_dns_hostnames = true
@@ -10,27 +71,15 @@ resource "aws_vpc" "main" {
   }
 }
 
-# Public Subnet for CGW
-resource "aws_subnet" "public_cgw" {
+# Public Subnet (Unified subnet for all resources)
+resource "aws_subnet" "public" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = var.cgw_subnet_cidr
   availability_zone       = var.availability_zone
   map_public_ip_on_launch = true
 
   tags = {
-    Name = "${var.environment}-public-cgw"
-  }
-}
-
-# Private Subnet for DB
-resource "aws_subnet" "private_db" {
-  vpc_id                  = aws_vpc.main.id
-  cidr_block              = var.db_subnet_cidr
-  availability_zone       = var.availability_zone
-  map_public_ip_on_launch = false
-
-  tags = {
-    Name = "${var.environment}-private-db"
+    Name = "${var.environment}-public-subnet"
   }
 }
 
@@ -43,8 +92,8 @@ resource "aws_internet_gateway" "main" {
   }
 }
 
-# Public Route Table
-resource "aws_route_table" "public" {
+# Unified Route Table
+resource "aws_route_table" "main" {
   vpc_id = aws_vpc.main.id
 
   route {
@@ -52,35 +101,31 @@ resource "aws_route_table" "public" {
     gateway_id = aws_internet_gateway.main.id
   }
 
-  tags = {
-    Name = "${var.environment}-public-rt"
+  route {
+    cidr_block           = "20.0.0.0/16"
+    network_interface_id = aws_instance.cgw.primary_network_interface_id
   }
-}
-
-resource "aws_route_table_association" "public_cgw" {
-  subnet_id      = aws_subnet.public_cgw.id
-  route_table_id = aws_route_table.public.id
-}
-
-# Private Route Table for DB
-resource "aws_route_table" "private" {
-  vpc_id = aws_vpc.main.id
 
   route {
-    cidr_block           = "0.0.0.0/0"
+    cidr_block           = "30.0.0.0/16"
+    network_interface_id = aws_instance.cgw.primary_network_interface_id
+  }
+
+  route {
+    cidr_block           = "40.0.0.0/16"
     network_interface_id = aws_instance.cgw.primary_network_interface_id
   }
 
   tags = {
-    Name = "${var.environment}-private-rt"
+    Name = "${var.environment}-rt"
   }
 
   depends_on = [aws_instance.cgw]
 }
 
-resource "aws_route_table_association" "private_db" {
-  subnet_id      = aws_subnet.private_db.id
-  route_table_id = aws_route_table.private.id
+resource "aws_route_table_association" "public" {
+  subnet_id      = aws_subnet.public.id
+  route_table_id = aws_route_table.main.id
 }
 
 # Security Group for CGW Instance
@@ -185,7 +230,7 @@ resource "aws_security_group" "db" {
 resource "aws_instance" "cgw" {
   ami                    = var.ami_id
   instance_type          = var.instance_type
-  subnet_id              = aws_subnet.public_cgw.id
+  subnet_id              = aws_subnet.public.id
   vpc_security_group_ids = [aws_security_group.cgw.id]
   key_name               = var.key_name
   source_dest_check      = false  # VPN을 위해 비활성화
@@ -202,17 +247,20 @@ resource "aws_eip_association" "cgw" {
   allocation_id = var.eip_id
 }
 
-# DB Instance with MySQL 8.0
+# DB Instance with MariaDB 10.5 (No public IP)
 resource "aws_instance" "db" {
   ami                    = var.ami_id
   instance_type          = var.db_instance_type
-  subnet_id              = aws_subnet.private_db.id
+  subnet_id              = aws_subnet.public.id
   vpc_security_group_ids = [aws_security_group.db.id]
   key_name               = var.key_name
+  iam_instance_profile   = aws_iam_instance_profile.ec2_profile.name
   user_data              = var.db_config_script != "" ? var.db_config_script : null
 
   tags = {
     Name = "${var.environment}-db-instance"
   }
+
+  depends_on = [aws_instance.cgw]
 }
 

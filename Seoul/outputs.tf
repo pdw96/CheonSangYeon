@@ -1,6 +1,6 @@
 output "seoul_vpc_id" {
   description = "Seoul VPC ID"
-  value       = module.seoul.vpc_id
+  value       = data.terraform_remote_state.global_vpc.outputs.seoul_vpc_id
 }
 
 output "idc_vpc_id" {
@@ -45,7 +45,7 @@ output "transit_gateway_id" {
 
 output "seoul_beanstalk_subnet_ids" {
   description = "Seoul Elastic Beanstalk Subnet IDs"
-  value       = module.seoul.beanstalk_subnet_ids
+  value       = data.terraform_remote_state.global_vpc.outputs.seoul_private_beanstalk_subnet_ids
 }
 
 output "aws_managed_vpn_status" {

@@ -1,12 +1,12 @@
 #!/bin/bash
-# AWS Managed VPN 자동 설정 스크립트
-# IDC Customer Gateway EC2 인스턴스용
+# AWS Managed VPN 자동 구성 스크립트 (Strongswan)
+# IDC Customer Gateway EC2 인스턴스에서 실행
 
 set -e
 
-echo "=== VPN 설정 시작 ==="
+echo "=== VPN 구성 시작 (Strongswan) ==="
 
-# 변수 설정 (Terraform에서 주입)
+# Terraform에서 넘어오는 값
 TUNNEL1_OUTSIDE="${tunnel1_address}"
 TUNNEL2_OUTSIDE="${tunnel2_address}"
 TUNNEL1_PSK="${tunnel1_psk}"
@@ -16,94 +16,102 @@ REMOTE_CIDR="${remote_cidr}"
 TOKYO_AWS_CIDR="${tokyo_aws_cidr}"
 TOKYO_IDC_CIDR="${tokyo_idc_cidr}"
 
-# IP 포워딩 활성화
-echo "net.ipv4.ip_forward = 1" >> /etc/sysctl.conf
+# IP 포워딩 활성화 (중복 추가 방지)
+if ! grep -q "^net.ipv4.ip_forward *= *1" /etc/sysctl.conf; then
+  echo "net.ipv4.ip_forward = 1" >> /etc/sysctl.conf
+fi
 sysctl -p
 
-# Libreswan 및 iptables 설치
-yum update -y
-yum install -y libreswan iptables-services
+# 패키지 설치 (Amazon Linux 2023 기준 dnf 사용)
+dnf update -y
+dnf install -y strongswan iptables-services
 
-# Libreswan 메인 설정 파일에 include 추가
-echo "include /etc/ipsec.d/*.conf" >> /etc/ipsec.conf
+# Strongswan 설정 파일 작성 (AWS 권장 파라미터)
+cat > /etc/strongswan/ipsec.conf <<CONF
+config setup
+    charondebug="ike 2, knl 2, cfg 2, net 2, esp 2, dmn 2, mgr 2"
 
-# Libreswan 설정 파일 생성 (AWS IKEv2 기반 - 모든 AWS 네트워크 포함)
-cat > /etc/ipsec.d/aws-vpn.conf <<CONF
+conn %default
+    ikelifetime=28800s
+    keylife=3600s
+    rekeymargin=540s
+    keyingtries=%forever
+    keyexchange=ikev2
+    mobike=no
+    ike=aes128-sha1-modp2048!
+    esp=aes128-sha1-modp2048!
+
 conn tunnel1
-    authby=secret
     auto=start
     left=%defaultroute
     leftid=%any
     leftsubnet=$LOCAL_CIDR
     right=$TUNNEL1_OUTSIDE
     rightsubnet=0.0.0.0/0
+    authby=secret
     type=tunnel
-    ikev2=insist
-    ike=aes128-sha1-modp2048
-    phase2alg=aes128-sha1-modp2048
-    ikelifetime=28800s
-    salifetime=3600s
+    dpdaction=restart
+    closeaction=restart
     dpddelay=10s
     dpdtimeout=30s
-    dpdaction=restart
 
 conn tunnel2
-    authby=secret
     auto=start
     left=%defaultroute
     leftid=%any
     leftsubnet=$LOCAL_CIDR
     right=$TUNNEL2_OUTSIDE
     rightsubnet=0.0.0.0/0
+    authby=secret
     type=tunnel
-    ikev2=insist
-    ike=aes128-sha1-modp2048
-    phase2alg=aes128-sha1-modp2048
-    ikelifetime=28800s
-    salifetime=3600s
+    dpdaction=restart
+    closeaction=restart
     dpddelay=10s
     dpdtimeout=30s
-    dpdaction=restart
 CONF
 
-# PSK 설정 (각 터널별로 매칭)
-cat > /etc/ipsec.d/aws-vpn.secrets <<SECRETS
-$TUNNEL1_OUTSIDE %any : PSK "$TUNNEL1_PSK"
-$TUNNEL2_OUTSIDE %any : PSK "$TUNNEL2_PSK"
+# PSK 설정
+cat > /etc/strongswan/ipsec.secrets <<SECRETS
+%any $TUNNEL1_OUTSIDE : PSK "$TUNNEL1_PSK"
+%any $TUNNEL2_OUTSIDE : PSK "$TUNNEL2_PSK"
 SECRETS
-chmod 600 /etc/ipsec.d/aws-vpn.secrets
+chmod 600 /etc/strongswan/ipsec.secrets
 
-# iptables 설정
+# iptables 초기화 및 규칙 구성
 systemctl enable iptables
 systemctl start iptables
 
-# 기존 FORWARD 규칙 초기화
 iptables -F FORWARD
-
-# FORWARD 체인 기본 정책을 ACCEPT로 설정
+iptables -t nat -F
 iptables -P FORWARD ACCEPT
 
-# NAT 설정
+iptables -t nat -A POSTROUTING -s $REMOTE_CIDR -d $LOCAL_CIDR -j MASQUERADE
+if [[ -n "$TOKYO_AWS_CIDR" && "$TOKYO_AWS_CIDR" != "null" ]]; then
+  iptables -t nat -A POSTROUTING -s $TOKYO_AWS_CIDR -d $LOCAL_CIDR -j MASQUERADE
+fi
+if [[ -n "$TOKYO_IDC_CIDR" && "$TOKYO_IDC_CIDR" != "null" ]]; then
+  iptables -t nat -A POSTROUTING -s $TOKYO_IDC_CIDR -d $LOCAL_CIDR -j MASQUERADE
+fi
 iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
 
-# FORWARD 규칙: VPN 트래픽 양방향 허용
 iptables -I FORWARD 1 -s $LOCAL_CIDR -d $REMOTE_CIDR -j ACCEPT
 iptables -I FORWARD 2 -s $REMOTE_CIDR -d $LOCAL_CIDR -j ACCEPT
+if [[ -n "$TOKYO_AWS_CIDR" && "$TOKYO_AWS_CIDR" != "null" ]]; then
+  iptables -I FORWARD 3 -s $LOCAL_CIDR -d $TOKYO_AWS_CIDR -j ACCEPT
+  iptables -I FORWARD 4 -s $TOKYO_AWS_CIDR -d $LOCAL_CIDR -j ACCEPT
+fi
+if [[ -n "$TOKYO_IDC_CIDR" && "$TOKYO_IDC_CIDR" != "null" ]]; then
+  iptables -I FORWARD 5 -s $LOCAL_CIDR -d $TOKYO_IDC_CIDR -j ACCEPT
+  iptables -I FORWARD 6 -s $TOKYO_IDC_CIDR -d $LOCAL_CIDR -j ACCEPT
+fi
 
-# Tokyo AWS/IDC와의 트래픽 허용
-iptables -I FORWARD 3 -s $LOCAL_CIDR -d $TOKYO_AWS_CIDR -j ACCEPT
-iptables -I FORWARD 4 -s $TOKYO_AWS_CIDR -d $LOCAL_CIDR -j ACCEPT
-iptables -I FORWARD 5 -s $LOCAL_CIDR -d $TOKYO_IDC_CIDR -j ACCEPT
-iptables -I FORWARD 6 -s $TOKYO_IDC_CIDR -d $LOCAL_CIDR -j ACCEPT
+iptables-save > /etc/sysconfig/iptables
 
-service iptables save
+# Strongswan 서비스 재시작
+systemctl enable strongswan
+systemctl restart strongswan
 
-# Libreswan 시작
-systemctl enable ipsec
-systemctl start ipsec
-
-# 설정 완료 후 상태 확인 (30초 대기)
 sleep 30
-ipsec status
+strongswan status
 
-echo "=== VPN 설정 완료 ==="
+echo "=== VPN 구성 완료 (Strongswan) ==="

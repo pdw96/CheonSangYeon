@@ -5,6 +5,14 @@ terraform {
       version = "~> 5.0"
     }
   }
+
+  backend "s3" {
+    bucket         = "terraform-s3-cheonsangyeon"
+    key            = "terraform/seoul/terraform.tfstate"
+    region         = "ap-northeast-2"
+    encrypt        = true
+    dynamodb_table = "terraform-Dynamo-CheonSangYeon"
+  }
 }
 
 provider "aws" {
@@ -12,25 +20,14 @@ provider "aws" {
   region = "ap-northeast-2"
 }
 
-# Seoul Module
-module "seoul" {
-  source = "./modules/seoul"
-
-  providers = {
-    aws = aws.seoul
+# Import VPC from global VPC module
+data "terraform_remote_state" "global_vpc" {
+  backend = "s3"
+  config = {
+    bucket = "terraform-s3-cheonsangyeon"
+    key    = "terraform/global-vpc/terraform.tfstate"
+    region = "ap-northeast-2"
   }
-
-  environment              = "seoul"
-  vpc_cidr                 = "20.0.0.0/16"
-  public_nat_subnet_cidrs  = ["20.0.1.0/24", "20.0.2.0/24"]
-  cgw_subnet_cidr          = "20.0.3.0/24"
-  beanstalk_subnet_cidrs   = ["20.0.10.0/24", "20.0.11.0/24"]
-  tgw_subnet_cidr          = "20.0.20.0/24"
-  availability_zones       = ["ap-northeast-2a", "ap-northeast-2c"]
-  ami_id                   = var.seoul_ami_id
-  instance_type            = "t3.micro"
-  key_name                 = var.seoul_key_name
-  transit_gateway_id       = aws_ec2_transit_gateway.main.id
 }
 
 # IDC Module (서울 리전에 배치, VPN으로만 연결)
@@ -41,16 +38,16 @@ module "idc" {
     aws = aws.seoul
   }
 
-  environment         = "idc"
-  vpc_cidr            = "10.0.0.0/16"
-  cgw_subnet_cidr     = "10.0.1.0/24"
-  db_subnet_cidr      = "10.0.2.0/24"
-  availability_zone   = "ap-northeast-2d"
-  ami_id              = var.seoul_ami_id
-  instance_type       = "t3.micro"
-  key_name            = var.seoul_key_name
-  eip_id              = aws_eip.idc_cgw.id
-  vpn_config_script   = templatefile("${path.module}/scripts/vpn-setup.sh", {
+  environment       = "idc"
+  vpc_cidr          = "10.0.0.0/16"
+  cgw_subnet_cidr   = "10.0.1.0/24"
+  db_subnet_cidr    = "10.0.2.0/24"
+  availability_zone = "ap-northeast-2d"
+  ami_id            = var.seoul_ami_id
+  instance_type     = "t3.micro"
+  key_name          = var.seoul_key_name
+  eip_id            = aws_eip.idc_cgw.id
+  vpn_config_script = templatefile("${path.module}/scripts/vpn-setup.sh", {
     tunnel1_address = aws_vpn_connection.seoul_to_idc.tunnel1_address
     tunnel2_address = aws_vpn_connection.seoul_to_idc.tunnel2_address
     tunnel1_psk     = aws_vpn_connection.seoul_to_idc.tunnel1_preshared_key
@@ -80,16 +77,14 @@ resource "aws_ec2_transit_gateway" "main" {
 # Transit Gateway Attachment - Seoul VPC
 resource "aws_ec2_transit_gateway_vpc_attachment" "seoul" {
   provider           = aws.seoul
-  subnet_ids         = [module.seoul.tgw_subnet_id]
+  subnet_ids         = [data.terraform_remote_state.global_vpc.outputs.seoul_tgw_subnet_id]
   transit_gateway_id = aws_ec2_transit_gateway.main.id
-  vpc_id             = module.seoul.vpc_id
+  vpc_id             = data.terraform_remote_state.global_vpc.outputs.seoul_vpc_id
 
   tags = {
     Name = "seoul-vpc-tgw-attachment"
   }
 }
-
-# IDC는 Transit Gateway 사용하지 않음 (VPN으로만 연결)
 
 # ===== AWS Managed VPN 설정 =====
 
@@ -239,49 +234,6 @@ resource "aws_iam_instance_profile" "beanstalk_ec2" {
   role     = aws_iam_role.beanstalk_ec2.name
 }
 
-# Security Group for Elastic Beanstalk Instances
-resource "aws_security_group" "beanstalk" {
-  provider    = aws.seoul
-  name        = "seoul-beanstalk-sg"
-  description = "Security group for Elastic Beanstalk instances"
-  vpc_id      = module.seoul.vpc_id
-
-  ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "HTTP from anywhere"
-  }
-
-  ingress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "HTTPS from anywhere"
-  }
-
-  ingress {
-    from_port   = -1
-    to_port     = -1
-    protocol    = "icmp"
-    cidr_blocks = ["10.0.0.0/16", "30.0.0.0/16", "172.16.0.0/16"]
-    description = "ICMP from VPCs and IDC"
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = "seoul-beanstalk-sg"
-  }
-}
-
 # Elastic Beanstalk Environment
 resource "aws_elastic_beanstalk_environment" "seoul_env" {
   provider            = aws.seoul
@@ -293,13 +245,13 @@ resource "aws_elastic_beanstalk_environment" "seoul_env" {
   setting {
     namespace = "aws:ec2:vpc"
     name      = "VPCId"
-    value     = module.seoul.vpc_id
+    value     = data.terraform_remote_state.global_vpc.outputs.seoul_vpc_id
   }
 
   setting {
     namespace = "aws:ec2:vpc"
     name      = "Subnets"
-    value     = join(",", module.seoul.beanstalk_subnet_ids)
+    value     = join(",", data.terraform_remote_state.global_vpc.outputs.seoul_private_beanstalk_subnet_ids)
   }
 
   setting {
@@ -329,7 +281,7 @@ resource "aws_elastic_beanstalk_environment" "seoul_env" {
   setting {
     namespace = "aws:autoscaling:launchconfiguration"
     name      = "SecurityGroups"
-    value     = aws_security_group.beanstalk.id
+    value     = data.terraform_remote_state.global_vpc.outputs.seoul_beanstalk_security_group_id
   }
 
   setting {
@@ -365,13 +317,13 @@ resource "aws_elastic_beanstalk_environment" "seoul_env" {
   setting {
     namespace = "aws:elbv2:loadbalancer"
     name      = "SecurityGroups"
-    value     = aws_security_group.beanstalk.id
+    value     = data.terraform_remote_state.global_vpc.outputs.seoul_beanstalk_security_group_id
   }
 
   setting {
     namespace = "aws:elbv2:loadbalancer"
     name      = "ManagedSecurityGroup"
-    value     = aws_security_group.beanstalk.id
+    value     = data.terraform_remote_state.global_vpc.outputs.seoul_beanstalk_security_group_id
   }
 
   setting {
@@ -383,51 +335,4 @@ resource "aws_elastic_beanstalk_environment" "seoul_env" {
   tags = {
     Name = "seoul-webapp-environment"
   }
-}
-
-# ===== Cross-Region Routing =====
-
-# Seoul AWS Private RT에 Tokyo CIDR 추가
-resource "aws_route" "seoul_private_to_tokyo_aws" {
-  provider               = aws.seoul
-  route_table_id         = module.seoul.private_route_table_id
-  destination_cidr_block = "40.0.0.0/16"
-  transit_gateway_id     = aws_ec2_transit_gateway.main.id
-}
-
-resource "aws_route" "seoul_private_to_tokyo_idc" {
-  provider               = aws.seoul
-  route_table_id         = module.seoul.private_route_table_id
-  destination_cidr_block = "30.0.0.0/16"
-  transit_gateway_id     = aws_ec2_transit_gateway.main.id
-}
-
-# Seoul IDC Private RT에 Tokyo CIDR 추가
-resource "aws_route" "seoul_idc_private_to_tokyo_aws" {
-  provider               = aws.seoul
-  route_table_id         = module.idc.private_route_table_id
-  destination_cidr_block = "40.0.0.0/16"
-  network_interface_id   = module.idc.cgw_network_interface_id
-}
-
-resource "aws_route" "seoul_idc_private_to_tokyo_idc" {
-  provider               = aws.seoul
-  route_table_id         = module.idc.private_route_table_id
-  destination_cidr_block = "30.0.0.0/16"
-  network_interface_id   = module.idc.cgw_network_interface_id
-}
-
-# Seoul IDC Public RT에 Tokyo CIDR 추가
-resource "aws_route" "seoul_idc_public_to_tokyo_aws" {
-  provider               = aws.seoul
-  route_table_id         = module.idc.public_route_table_id
-  destination_cidr_block = "40.0.0.0/16"
-  network_interface_id   = module.idc.cgw_network_interface_id
-}
-
-resource "aws_route" "seoul_idc_public_to_tokyo_idc" {
-  provider               = aws.seoul
-  route_table_id         = module.idc.public_route_table_id
-  destination_cidr_block = "30.0.0.0/16"
-  network_interface_id   = module.idc.cgw_network_interface_id
 }
