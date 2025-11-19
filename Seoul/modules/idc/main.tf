@@ -9,6 +9,13 @@ terraform {
   }
 }
 
+locals {
+  db_secret_arns = compact([
+    var.db_root_secret_arn,
+    var.db_app_secret_arn
+  ])
+}
+
 # IAM Role for EC2 instances to access AWS services
 resource "aws_iam_role" "ec2_role" {
   name = "${var.environment}-ec2-role"
@@ -38,7 +45,7 @@ resource "aws_iam_role_policy" "ec2_describe" {
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
+    Statement = concat([
       {
         Effect = "Allow"
         Action = [
@@ -47,7 +54,13 @@ resource "aws_iam_role_policy" "ec2_describe" {
         ]
         Resource = "*"
       }
-    ]
+    ], length(local.db_secret_arns) > 0 ? [
+      {
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = local.db_secret_arns
+      }
+    ] : [])
   })
 }
 

@@ -18,6 +18,16 @@ data "aws_caller_identity" "current" {
   provider = aws.seoul
 }
 
+data "aws_secretsmanager_secret_version" "idc_app_password" {
+  provider  = aws.seoul
+  secret_id = var.idc_app_secret_arn
+}
+
+data "aws_secretsmanager_secret_version" "aurora_admin_password" {
+  provider  = aws.seoul
+  secret_id = var.aurora_admin_secret_arn
+}
+
 # Import Aurora outputs from S3 backend
 data "terraform_remote_state" "aurora" {
   backend = "s3"
@@ -221,9 +231,9 @@ resource "aws_dms_endpoint" "source_idc_mysql" {
   server_name   = data.aws_instance.idc_db.private_ip
   port          = 3306
   database_name = "idcdb"
-  username      = "idcuser"
-  password      = "Password123!"
-  ssl_mode      = "none"
+  username      = var.idc_app_username
+  password      = data.aws_secretsmanager_secret_version.idc_app_password.secret_string
+  ssl_mode      = "require"
 
   tags = {
     Name = "source-idc-mysql"
@@ -239,9 +249,9 @@ resource "aws_dms_endpoint" "target_aurora_mysql" {
   server_name   = data.terraform_remote_state.aurora.outputs.seoul_cluster_endpoint
   port          = 3306
   database_name = "globaldb"
-  username      = "admin"
-  password      = "AdminPassword123!"
-  ssl_mode      = "none"
+  username      = var.aurora_admin_username
+  password      = data.aws_secretsmanager_secret_version.aurora_admin_password.secret_string
+  ssl_mode      = "require"
 
   tags = {
     Name = "target-aurora-mysql"

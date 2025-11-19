@@ -58,22 +58,12 @@ output "s3_bucket_replica_name" {
   value       = data.terraform_remote_state.s3.outputs.s3_bucket_replica_name
 }
 
-output "migration_command" {
-  description = "Command to migrate data from IDC MySQL to Aurora"
-  value       = <<-EOT
-    # IDC DB 인스턴스에서 실행:
-    mysqldump -h localhost -u idcuser -p'Password123!' idcdb > /tmp/idcdb_backup.sql
-    
-    # IDC에서 S3로 업로드:
-    aws s3 cp /tmp/idcdb_backup.sql s3://${data.terraform_remote_state.s3.outputs.s3_bucket_name}/migration/idcdb_backup.sql
-    
-    # Aurora에서 복원:
-    mysql -h ${aws_rds_cluster.aurora_seoul.endpoint} -u admin -p'AdminPassword123!' globaldb < /tmp/idcdb_backup.sql
-    
-    # 또는 S3에서 직접 로드 (Aurora 클러스터에서 실행):
-    LOAD DATA FROM S3 's3://${data.terraform_remote_state.s3.outputs.s3_bucket_name}/migration/idcdb_backup.sql'
-    INTO TABLE your_table
-    FIELDS TERMINATED BY ','
-    LINES TERMINATED BY '\n';
-  EOT
+output "idc_app_password_secret_arn" {
+  description = "Secrets Manager ARN that stores the IDC application database password"
+  value       = var.idc_app_secret_arn
+}
+
+output "aurora_admin_password_secret_arn" {
+  description = "Secrets Manager ARN that stores the Aurora administrator password"
+  value       = var.aurora_admin_secret_arn
 }

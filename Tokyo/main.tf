@@ -12,6 +12,15 @@ provider "aws" {
   region = "ap-northeast-1"
 }
 
+locals {
+  tokyo_db_user_data = templatefile("${path.module}/scripts/db-setup.sh", {
+    db_root_secret_arn = var.idc_root_secret_arn
+    db_app_secret_arn  = var.idc_app_secret_arn
+    db_secret_region   = var.idc_secret_region
+    db_app_username    = var.idc_app_username
+  })
+}
+
 # Tokyo Module
 module "tokyo" {
   source = "./modules/tokyo"
@@ -60,7 +69,9 @@ module "idc" {
     seoul_aws_cidr  = "20.0.0.0/16"
     seoul_idc_cidr  = "10.0.0.0/16"
   })
-  db_config_script = file("${path.module}/scripts/db-setup.sh")
+  db_config_script   = local.tokyo_db_user_data
+  db_root_secret_arn = var.idc_root_secret_arn
+  db_app_secret_arn  = var.idc_app_secret_arn
 
   depends_on = [aws_vpn_connection.tokyo_to_idc]
 }

@@ -1,5 +1,58 @@
 # IDC Module - VPC and Network Resources
 
+locals {
+  db_secret_arns = compact([
+    var.db_root_secret_arn,
+    var.db_app_secret_arn
+  ])
+}
+
+resource "aws_iam_role" "db_role" {
+  name = "${var.environment}-db-ec2-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name = "${var.environment}-db-ec2-role"
+  }
+}
+
+resource "aws_iam_role_policy" "db_secret_access" {
+  name = "${var.environment}-db-secret-policy"
+  role = aws_iam_role.db_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = length(local.db_secret_arns) > 0 ? [
+      {
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = local.db_secret_arns
+      }
+    ] : []
+  })
+}
+
+resource "aws_iam_instance_profile" "db_profile" {
+  name = "${var.environment}-db-ec2-profile"
+  role = aws_iam_role.db_role.name
+
+  tags = {
+    Name = "${var.environment}-db-ec2-profile"
+  }
+}
+
 resource "aws_vpc" "main" {
   cidr_block           = var.vpc_cidr
   enable_dns_hostnames = true
@@ -209,6 +262,7 @@ resource "aws_instance" "db" {
   subnet_id              = aws_subnet.private_db.id
   vpc_security_group_ids = [aws_security_group.db.id]
   key_name               = var.key_name
+  iam_instance_profile   = aws_iam_instance_profile.db_profile.name
   user_data              = var.db_config_script != "" ? var.db_config_script : null
 
   tags = {

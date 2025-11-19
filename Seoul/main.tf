@@ -20,6 +20,15 @@ provider "aws" {
   region = "ap-northeast-2"
 }
 
+locals {
+  seoul_db_user_data = templatefile("${path.module}/scripts/db-setup.sh", {
+    db_root_secret_arn = var.idc_root_secret_arn
+    db_app_secret_arn  = var.idc_app_secret_arn
+    db_secret_region   = var.idc_secret_region
+    db_app_username    = var.idc_app_username
+  })
+}
+
 # Import VPC from global VPC module
 data "terraform_remote_state" "global_vpc" {
   backend = "s3"
@@ -57,7 +66,9 @@ module "idc" {
     tokyo_aws_cidr  = "40.0.0.0/16"
     tokyo_idc_cidr  = "30.0.0.0/16"
   })
-  db_config_script = file("${path.module}/scripts/db-setup.sh")
+  db_config_script     = local.seoul_db_user_data
+  db_root_secret_arn   = var.idc_root_secret_arn
+  db_app_secret_arn    = var.idc_app_secret_arn
 
   depends_on = [aws_vpn_connection.seoul_to_idc]
 }

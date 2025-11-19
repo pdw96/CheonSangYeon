@@ -62,3 +62,13 @@ variable "db_config_script" {
   default     = ""
 }
 
+variable "db_root_secret_arn" {
+  description = "Secrets Manager ARN for the IDC root password"
+  type        = string
+}
+
+variable "db_app_secret_arn" {
+  description = "Secrets Manager ARN for the IDC application password"
+  type        = string
+}
+

@@ -1,12 +1,44 @@
 #!/bin/bash
 # MySQL 8.0 Installation Script for IDC DB Instance (Amazon Linux 2023)
 
-set -e
+set -euo pipefail
+
+DB_ROOT_SECRET_ARN="${DB_ROOT_SECRET_ARN:-"${db_root_secret_arn}"}"
+DB_APP_SECRET_ARN="${DB_APP_SECRET_ARN:-"${db_app_secret_arn}"}"
+DB_SECRET_REGION="${DB_SECRET_REGION:-"${db_secret_region}"}"
+DB_APP_USERNAME="${DB_APP_USERNAME:-"${db_app_username}"}"
+
+if [[ -z "$DB_SECRET_REGION" ]]; then
+  DB_SECRET_REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-}}"
+fi
+
+if [[ -z "$DB_ROOT_SECRET_ARN" || -z "$DB_APP_SECRET_ARN" || -z "$DB_SECRET_REGION" || -z "$DB_APP_USERNAME" ]]; then
+  echo "[ERROR] Required database secret metadata is missing" >&2
+  exit 1
+fi
+
+fetch_secret() {
+  local secret_arn="$1"
+  local region="$2"
+  aws secretsmanager get-secret-value \
+    --secret-id "$secret_arn" \
+    --region "$region" \
+    --query 'SecretString' \
+    --output text
+}
+
+DB_ROOT_PASSWORD="$(fetch_secret "$DB_ROOT_SECRET_ARN" "$DB_SECRET_REGION")"
+DB_APP_PASSWORD="$(fetch_secret "$DB_APP_SECRET_ARN" "$DB_SECRET_REGION")"
+
+if [[ -z "$DB_ROOT_PASSWORD" || -z "$DB_APP_PASSWORD" ]]; then
+  echo "[ERROR] Failed to retrieve database secrets" >&2
+  exit 1
+fi
 
 echo "=== MySQL 8.0 Installation Started ==="
 
 # Amazon Linux 2023에서 MySQL 8.0 Community Server 설치
-dnf install -y mariadb105-server
+dnf install -y mariadb105-server >/dev/null
 
 # MariaDB 서비스 시작 및 자동 시작 활성화
 systemctl start mariadb
@@ -14,24 +46,24 @@ systemctl enable mariadb
 
 # MariaDB root 비밀번호 설정 및 데이터베이스 초기화
 mysql -u root <<-MYSQL
-  ALTER USER 'root'@'localhost' IDENTIFIED BY 'Password123!';
+  ALTER USER 'root'@'localhost' IDENTIFIED BY '${DB_ROOT_PASSWORD}';
   CREATE DATABASE IF NOT EXISTS idcdb;
-  CREATE USER IF NOT EXISTS 'idcuser'@'%' IDENTIFIED BY 'Password123!';
-  GRANT ALL PRIVILEGES ON idcdb.* TO 'idcuser'@'%';
+  CREATE USER IF NOT EXISTS '${DB_APP_USERNAME}'@'%' IDENTIFIED BY '${DB_APP_PASSWORD}';
+  GRANT ALL PRIVILEGES ON idcdb.* TO '${DB_APP_USERNAME}'@'%';
   FLUSH PRIVILEGES;
 MYSQL
 
 # 원격 접속 허용 - MariaDB가 0.0.0.0에서 리스닝하도록 강제 설정
 echo "Configuring MariaDB for remote access..."
 # /etc/my.cnf.d/mariadb-server.cnf 파일에 bind-address 설정
-cat > /etc/my.cnf.d/mariadb-server.cnf <<'EOF'
+cat > /etc/my.cnf.d/mariadb-server.cnf <<'EOF_CONF'
 [mysqld]
 datadir=/var/lib/mysql
 socket=/var/lib/mysql/mysql.sock
 log-error=/var/log/mariadb/mariadb.log
 pid-file=/run/mariadb/mariadb.pid
 bind-address = 0.0.0.0
-EOF
+EOF_CONF
 
 echo "Restarting MariaDB service..."
 systemctl restart mariadb
@@ -56,21 +88,21 @@ ip route add 30.0.0.0/16 via $CGW_IP
 ip route add 40.0.0.0/16 via $CGW_IP
 
 # 재부팅 후에도 유지되도록 설정
-cat > /etc/sysconfig/network-scripts/route-eth0 <<EOF
+cat > /etc/sysconfig/network-scripts/route-eth0 <<EOF_ROUTES
 20.0.0.0/16 via $CGW_IP
 30.0.0.0/16 via $CGW_IP
 40.0.0.0/16 via $CGW_IP
-EOF
+EOF_ROUTES
 
 echo "=== MySQL/MariaDB Installation Completed ==="
 echo "Database: idcdb"
-echo "User: idcuser"
-echo "Password: Password123!"
+echo "User: ${DB_APP_USERNAME}"
+echo "Password stored securely in Secrets Manager (ARN: $DB_APP_SECRET_ARN)"
 
 # 테이블 생성 및 데이터 삽입 (자동화)
-mysql -u idcuser -pPassword123! idcdb <<-MYSQL
+mysql -u "$DB_APP_USERNAME" -p"$DB_APP_PASSWORD" idcdb <<'MYSQL'
 CREATE TABLE IF NOT EXISTS userTBL
-( 
+(
 userID CHAR(8) NOT NULL PRIMARY KEY,
 name NVARCHAR(10) NOT NULL,
 birthYear INT NOT NULL,
