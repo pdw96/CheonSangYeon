@@ -138,14 +138,14 @@ resource "aws_security_group" "cgw" {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = var.cgw_ssh_cidrs
   }
 
   ingress {
     from_port   = -1
     to_port     = -1
     protocol    = "icmp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = var.cgw_icmp_cidrs
   }
 
   # IPsec VPN - IKE
@@ -153,7 +153,7 @@ resource "aws_security_group" "cgw" {
     from_port   = 500
     to_port     = 500
     protocol    = "udp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = var.vpn_peer_cidrs
   }
 
   # IPsec VPN - NAT-T
@@ -161,7 +161,7 @@ resource "aws_security_group" "cgw" {
     from_port   = 4500
     to_port     = 4500
     protocol    = "udp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = var.vpn_peer_cidrs
   }
 
   # ESP Protocol
@@ -169,7 +169,7 @@ resource "aws_security_group" "cgw" {
     from_port   = 0
     to_port     = 0
     protocol    = "50"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = var.vpn_peer_cidrs
   }
 
   egress {
@@ -194,24 +194,24 @@ resource "aws_security_group" "db" {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "SSH from anywhere"
+    cidr_blocks = var.db_ssh_cidrs
+    description = "SSH from AWS VPCs"
   }
 
   ingress {
     from_port   = 3306
     to_port     = 3306
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "MySQL from anywhere"
+    cidr_blocks = var.db_mysql_cidrs
+    description = "MySQL from AWS VPCs"
   }
 
   ingress {
     from_port   = -1
     to_port     = -1
     protocol    = "icmp"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "ICMP from anywhere"
+    cidr_blocks = var.db_icmp_cidrs
+    description = "ICMP from peer IDCs"
   }
 
   egress {

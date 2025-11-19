@@ -12,6 +12,13 @@ provider "aws" {
   region = "ap-northeast-1"
 }
 
+locals {
+  tokyo_vpc_cidr = "40.0.0.0/16"
+  tokyo_idc_cidr = "30.0.0.0/16"
+  seoul_vpc_cidr = "20.0.0.0/16"
+  seoul_idc_cidr = "10.0.0.0/16"
+}
+
 # Tokyo Module
 module "tokyo" {
   source = "./modules/tokyo"
@@ -42,7 +49,7 @@ module "idc" {
   }
 
   environment         = "idc"
-  vpc_cidr            = "30.0.0.0/16"
+  vpc_cidr            = local.tokyo_idc_cidr
   cgw_subnet_cidr     = "30.0.1.0/24"
   db_subnet_cidr      = "30.0.2.0/24"
   availability_zone   = "ap-northeast-1d"
@@ -55,12 +62,22 @@ module "idc" {
     tunnel2_address = aws_vpn_connection.tokyo_to_idc.tunnel2_address
     tunnel1_psk     = aws_vpn_connection.tokyo_to_idc.tunnel1_preshared_key
     tunnel2_psk     = aws_vpn_connection.tokyo_to_idc.tunnel2_preshared_key
-    local_cidr      = "30.0.0.0/16"
-    remote_cidr     = "40.0.0.0/16"
-    seoul_aws_cidr  = "20.0.0.0/16"
-    seoul_idc_cidr  = "10.0.0.0/16"
+    local_cidr      = local.tokyo_idc_cidr
+    remote_cidr     = local.tokyo_vpc_cidr
+    seoul_aws_cidr  = local.seoul_vpc_cidr
+    seoul_idc_cidr  = local.seoul_idc_cidr
   })
   db_config_script = file("${path.module}/scripts/db-setup.sh")
+
+  cgw_ssh_cidrs  = [local.tokyo_vpc_cidr, local.seoul_vpc_cidr]
+  cgw_icmp_cidrs = [local.tokyo_idc_cidr, local.seoul_idc_cidr]
+  vpn_peer_cidrs = [
+    "${aws_vpn_connection.tokyo_to_idc.tunnel1_address}/32",
+    "${aws_vpn_connection.tokyo_to_idc.tunnel2_address}/32",
+  ]
+  db_ssh_cidrs   = [local.tokyo_vpc_cidr, local.seoul_vpc_cidr]
+  db_mysql_cidrs = [local.tokyo_vpc_cidr, local.seoul_vpc_cidr]
+  db_icmp_cidrs  = [local.tokyo_idc_cidr, local.seoul_idc_cidr]
 
   depends_on = [aws_vpn_connection.tokyo_to_idc]
 }
