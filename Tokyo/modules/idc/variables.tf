@@ -62,3 +62,33 @@ variable "db_config_script" {
   default     = ""
 }
 
+variable "cgw_ssh_cidrs" {
+  description = "CIDR blocks allowed to SSH into the CGW instance"
+  type        = list(string)
+}
+
+variable "cgw_icmp_cidrs" {
+  description = "CIDR blocks allowed to send ICMP to the CGW instance"
+  type        = list(string)
+}
+
+variable "vpn_peer_cidrs" {
+  description = "CIDR blocks (typically /32 addresses) for VPN peer CGW endpoints"
+  type        = list(string)
+}
+
+variable "db_ssh_cidrs" {
+  description = "CIDR blocks allowed to SSH into the DB instance"
+  type        = list(string)
+}
+
+variable "db_mysql_cidrs" {
+  description = "CIDR blocks allowed to access MySQL on the DB instance"
+  type        = list(string)
+}
+
+variable "db_icmp_cidrs" {
+  description = "CIDR blocks allowed to send ICMP to the DB instance"
+  type        = list(string)
+}
+
