@@ -83,6 +83,18 @@ resource "aws_subnet" "public" {
   }
 }
 
+# Private Subnet for DB resources
+resource "aws_subnet" "private_db" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = var.db_subnet_cidr
+  availability_zone       = var.availability_zone
+  map_public_ip_on_launch = false
+
+  tags = {
+    Name = "${var.environment}-private-db"
+  }
+}
+
 # Internet Gateway
 resource "aws_internet_gateway" "main" {
   vpc_id = aws_vpc.main.id
@@ -126,6 +138,37 @@ resource "aws_route_table" "main" {
 resource "aws_route_table_association" "public" {
   subnet_id      = aws_subnet.public.id
   route_table_id = aws_route_table.main.id
+}
+
+# Private Route Table (Transit/CGW only)
+resource "aws_route_table" "private" {
+  vpc_id = aws_vpc.main.id
+
+  route {
+    cidr_block           = "20.0.0.0/16"
+    network_interface_id = aws_instance.cgw.primary_network_interface_id
+  }
+
+  route {
+    cidr_block           = "30.0.0.0/16"
+    network_interface_id = aws_instance.cgw.primary_network_interface_id
+  }
+
+  route {
+    cidr_block           = "40.0.0.0/16"
+    network_interface_id = aws_instance.cgw.primary_network_interface_id
+  }
+
+  tags = {
+    Name = "${var.environment}-private-rt"
+  }
+
+  depends_on = [aws_instance.cgw]
+}
+
+resource "aws_route_table_association" "private_db" {
+  subnet_id      = aws_subnet.private_db.id
+  route_table_id = aws_route_table.private.id
 }
 
 # Security Group for CGW Instance
@@ -249,13 +292,14 @@ resource "aws_eip_association" "cgw" {
 
 # DB Instance with MariaDB 10.5 (No public IP)
 resource "aws_instance" "db" {
-  ami                    = var.ami_id
-  instance_type          = var.db_instance_type
-  subnet_id              = aws_subnet.public.id
-  vpc_security_group_ids = [aws_security_group.db.id]
-  key_name               = var.key_name
-  iam_instance_profile   = aws_iam_instance_profile.ec2_profile.name
-  user_data              = var.db_config_script != "" ? var.db_config_script : null
+  ami                         = var.ami_id
+  instance_type               = var.db_instance_type
+  subnet_id                   = aws_subnet.private_db.id
+  vpc_security_group_ids      = [aws_security_group.db.id]
+  key_name                    = var.key_name
+  iam_instance_profile        = aws_iam_instance_profile.ec2_profile.name
+  user_data                   = var.db_config_script != "" ? var.db_config_script : null
+  associate_public_ip_address = false
 
   tags = {
     Name = "${var.environment}-db-instance"
