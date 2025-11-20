@@ -1,10 +1,10 @@
 #!/bin/bash
-# AWS Managed VPN 자동 구성 스크립트 (Strongswan)
+# AWS Managed VPN 자동 구성 스크립트 (Libreswan - AL2023)
 # IDC Customer Gateway EC2 인스턴스에서 실행
 
 set -e
 
-echo "=== VPN 구성 시작 (Strongswan) ==="
+echo "=== VPN 구성 시작 (Libreswan) ==="
 
 # Terraform에서 넘어오는 값
 TUNNEL1_OUTSIDE="${tunnel1_address}"
@@ -22,60 +22,63 @@ if ! grep -q "^net.ipv4.ip_forward *= *1" /etc/sysctl.conf; then
 fi
 sysctl -p
 
-# 패키지 설치 (Amazon Linux 2023 기준 dnf 사용)
-dnf update -y
-dnf install -y strongswan iptables-services
+# 패키지 설치 (Amazon Linux 2023)
+yum update -y
+yum install -y libreswan iptables-services
 
-# Strongswan 설정 파일 작성 (AWS 권장 파라미터)
-cat > /etc/strongswan/ipsec.conf <<CONF
-config setup
-    charondebug="ike 2, knl 2, cfg 2, net 2, esp 2, dmn 2, mgr 2"
-
-conn %default
-    ikelifetime=28800s
-    keylife=3600s
-    rekeymargin=540s
-    keyingtries=%forever
-    keyexchange=ikev2
-    mobike=no
-    ike=aes128-sha1-modp2048!
-    esp=aes128-sha1-modp2048!
-
+# Libreswan 설정 파일 작성
+cat > /etc/ipsec.d/aws-vpn.conf <<CONF
 conn tunnel1
+    authby=secret
     auto=start
     left=%defaultroute
     leftid=%any
-    leftsubnet=$LOCAL_CIDR
+    leftsubnet=0.0.0.0/0
     right=$TUNNEL1_OUTSIDE
     rightsubnet=0.0.0.0/0
-    authby=secret
     type=tunnel
-    dpdaction=restart
-    closeaction=restart
+    ikev2=insist
+    ike=aes128-sha1-modp2048
+    phase2alg=aes128-sha1-modp2048
+    ikelifetime=28800s
+    salifetime=3600s
     dpddelay=10s
     dpdtimeout=30s
+    dpdaction=restart
+    mark=100/0xffffffff
+    vti-interface=vti1
+    vti-routing=no
+    vti-shared=no
 
 conn tunnel2
+    authby=secret
     auto=start
     left=%defaultroute
     leftid=%any
-    leftsubnet=$LOCAL_CIDR
+    leftsubnet=0.0.0.0/0
     right=$TUNNEL2_OUTSIDE
     rightsubnet=0.0.0.0/0
-    authby=secret
     type=tunnel
-    dpdaction=restart
-    closeaction=restart
+    ikev2=insist
+    ike=aes128-sha1-modp2048
+    phase2alg=aes128-sha1-modp2048
+    ikelifetime=28800s
+    salifetime=3600s
     dpddelay=10s
     dpdtimeout=30s
+    dpdaction=restart
+    mark=200/0xffffffff
+    vti-interface=vti2
+    vti-routing=no
+    vti-shared=no
 CONF
 
 # PSK 설정
-cat > /etc/strongswan/ipsec.secrets <<SECRETS
-%any $TUNNEL1_OUTSIDE : PSK "$TUNNEL1_PSK"
-%any $TUNNEL2_OUTSIDE : PSK "$TUNNEL2_PSK"
+cat > /etc/ipsec.d/aws-vpn.secrets <<SECRETS
+$TUNNEL1_OUTSIDE %any : PSK "$TUNNEL1_PSK"
+$TUNNEL2_OUTSIDE %any : PSK "$TUNNEL2_PSK"
 SECRETS
-chmod 600 /etc/strongswan/ipsec.secrets
+chmod 600 /etc/ipsec.d/aws-vpn.secrets
 
 # iptables 초기화 및 규칙 구성
 systemctl enable iptables
@@ -107,11 +110,35 @@ fi
 
 iptables-save > /etc/sysconfig/iptables
 
-# Strongswan 서비스 재시작
-systemctl enable strongswan
-systemctl restart strongswan
+# Libreswan 시작 (VTI 모드)
+systemctl enable ipsec
+systemctl start ipsec
 
-sleep 30
-strongswan status
+# VTI 인터페이스 설정 대기
+sleep 10
 
-echo "=== VPN 구성 완료 (Strongswan) ==="
+# VTI 인터페이스 활성화 및 라우팅 설정
+ip link set vti1 up 2>/dev/null || true
+ip link set vti2 up 2>/dev/null || true
+
+# VTI를 통한 라우팅 설정 (Primary: vti1, Backup: vti2)
+ip route add $REMOTE_CIDR dev vti1 metric 100 2>/dev/null || true
+ip route add $REMOTE_CIDR dev vti2 metric 200 2>/dev/null || true
+
+if [[ -n "$TOKYO_AWS_CIDR" && "$TOKYO_AWS_CIDR" != "null" ]]; then
+  ip route add $TOKYO_AWS_CIDR dev vti1 metric 100 2>/dev/null || true
+  ip route add $TOKYO_AWS_CIDR dev vti2 metric 200 2>/dev/null || true
+fi
+
+if [[ -n "$TOKYO_IDC_CIDR" && "$TOKYO_IDC_CIDR" != "null" ]]; then
+  ip route add $TOKYO_IDC_CIDR dev vti1 metric 100 2>/dev/null || true
+  ip route add $TOKYO_IDC_CIDR dev vti2 metric 200 2>/dev/null || true
+fi
+
+# IPsec 연결 확인
+ipsec status | grep -i "STATE" || true
+
+sleep 10
+ipsec trafficstatus
+
+echo "=== VPN 구성 완료 (Libreswan VTI) ==="

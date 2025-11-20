@@ -5,6 +5,14 @@ terraform {
       version = "~> 5.0"
     }
   }
+
+  backend "s3" {
+    bucket         = "terraform-s3-cheonsangyeon"
+    key            = "terraform/tokyo/terraform.tfstate"
+    region         = "ap-northeast-2"
+    encrypt        = true
+    dynamodb_table = "terraform-Dynamo-CheonSangYeon"
+  }
 }
 
 provider "aws" {
@@ -12,25 +20,14 @@ provider "aws" {
   region = "ap-northeast-1"
 }
 
-# Tokyo Module
-module "tokyo" {
-  source = "./modules/tokyo"
-
-  providers = {
-    aws = aws.tokyo
+# Import VPC from global VPC module
+data "terraform_remote_state" "global_vpc" {
+  backend = "s3"
+  config = {
+    bucket = "terraform-s3-cheonsangyeon"
+    key    = "terraform/global-vpc/terraform.tfstate"
+    region = "ap-northeast-2"
   }
-
-  environment              = "tokyo"
-  vpc_cidr                 = "40.0.0.0/16"
-  public_nat_subnet_cidrs  = ["40.0.1.0/24", "40.0.2.0/24"]
-  cgw_subnet_cidr          = "40.0.3.0/24"
-  beanstalk_subnet_cidrs   = ["40.0.10.0/24", "40.0.11.0/24"]
-  tgw_subnet_cidr          = "40.0.20.0/24"
-  availability_zones       = ["ap-northeast-1a", "ap-northeast-1c"]
-  ami_id                   = var.tokyo_ami_id
-  instance_type            = "t3.micro"
-  key_name                 = var.tokyo_key_name
-  transit_gateway_id       = aws_ec2_transit_gateway.main.id
 }
 
 # IDC Module (도쿄 리전에 배치, VPN으로만 연결)
@@ -80,9 +77,9 @@ resource "aws_ec2_transit_gateway" "main" {
 # Transit Gateway Attachment - Tokyo VPC
 resource "aws_ec2_transit_gateway_vpc_attachment" "tokyo" {
   provider           = aws.tokyo
-  subnet_ids         = [module.tokyo.tgw_subnet_id]
+  subnet_ids         = [data.terraform_remote_state.global_vpc.outputs.tokyo_tgw_subnet_id]
   transit_gateway_id = aws_ec2_transit_gateway.main.id
-  vpc_id             = module.tokyo.vpc_id
+  vpc_id             = data.terraform_remote_state.global_vpc.outputs.tokyo_vpc_id
 
   tags = {
     Name = "tokyo-vpc-tgw-attachment"
@@ -244,7 +241,7 @@ resource "aws_security_group" "beanstalk" {
   provider    = aws.tokyo
   name        = "tokyo-beanstalk-sg"
   description = "Security group for Elastic Beanstalk instances"
-  vpc_id      = module.tokyo.vpc_id
+  vpc_id      = data.terraform_remote_state.global_vpc.outputs.tokyo_vpc_id
 
   ingress {
     from_port   = 80
@@ -266,7 +263,7 @@ resource "aws_security_group" "beanstalk" {
     from_port   = -1
     to_port     = -1
     protocol    = "icmp"
-    cidr_blocks = ["30.0.0.0/16", "10.0.0.0/16", "172.16.0.0/16"]
+    cidr_blocks = ["10.0.0.0/16", "20.0.0.0/16", "30.0.0.0/16", "40.0.0.0/16"]
     description = "ICMP from VPCs and IDC"
   }
 
@@ -293,13 +290,13 @@ resource "aws_elastic_beanstalk_environment" "tokyo_env" {
   setting {
     namespace = "aws:ec2:vpc"
     name      = "VPCId"
-    value     = module.tokyo.vpc_id
+    value     = data.terraform_remote_state.global_vpc.outputs.tokyo_vpc_id
   }
 
   setting {
     namespace = "aws:ec2:vpc"
     name      = "Subnets"
-    value     = join(",", module.tokyo.beanstalk_subnet_ids)
+    value     = join(",", data.terraform_remote_state.global_vpc.outputs.tokyo_private_beanstalk_subnet_ids)
   }
 
   setting {
@@ -383,51 +380,4 @@ resource "aws_elastic_beanstalk_environment" "tokyo_env" {
   tags = {
     Name = "tokyo-webapp-environment"
   }
-}
-
-# ===== Cross-Region Routing =====
-
-# Tokyo AWS Private RT에 Seoul CIDR 추가
-resource "aws_route" "tokyo_private_to_seoul_aws" {
-  provider               = aws.tokyo
-  route_table_id         = module.tokyo.private_route_table_id
-  destination_cidr_block = "20.0.0.0/16"
-  transit_gateway_id     = aws_ec2_transit_gateway.main.id
-}
-
-resource "aws_route" "tokyo_private_to_seoul_idc" {
-  provider               = aws.tokyo
-  route_table_id         = module.tokyo.private_route_table_id
-  destination_cidr_block = "10.0.0.0/16"
-  transit_gateway_id     = aws_ec2_transit_gateway.main.id
-}
-
-# Tokyo IDC Private RT에 Seoul CIDR 추가
-resource "aws_route" "tokyo_idc_private_to_seoul_aws" {
-  provider               = aws.tokyo
-  route_table_id         = module.idc.private_route_table_id
-  destination_cidr_block = "20.0.0.0/16"
-  network_interface_id   = module.idc.cgw_network_interface_id
-}
-
-resource "aws_route" "tokyo_idc_private_to_seoul_idc" {
-  provider               = aws.tokyo
-  route_table_id         = module.idc.private_route_table_id
-  destination_cidr_block = "10.0.0.0/16"
-  network_interface_id   = module.idc.cgw_network_interface_id
-}
-
-# Tokyo IDC Public RT에 Seoul CIDR 추가
-resource "aws_route" "tokyo_idc_public_to_seoul_aws" {
-  provider               = aws.tokyo
-  route_table_id         = module.idc.public_route_table_id
-  destination_cidr_block = "20.0.0.0/16"
-  network_interface_id   = module.idc.cgw_network_interface_id
-}
-
-resource "aws_route" "tokyo_idc_public_to_seoul_idc" {
-  provider               = aws.tokyo
-  route_table_id         = module.idc.public_route_table_id
-  destination_cidr_block = "10.0.0.0/16"
-  network_interface_id   = module.idc.cgw_network_interface_id
 }

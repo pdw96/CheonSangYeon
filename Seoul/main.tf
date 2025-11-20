@@ -256,6 +256,12 @@ resource "aws_elastic_beanstalk_environment" "seoul_env" {
 
   setting {
     namespace = "aws:ec2:vpc"
+    name      = "ELBSubnets"
+    value     = join(",", data.terraform_remote_state.global_vpc.outputs.seoul_public_nat_subnet_ids)
+  }
+
+  setting {
+    namespace = "aws:ec2:vpc"
     name      = "AssociatePublicIpAddress"
     value     = "false"
   }

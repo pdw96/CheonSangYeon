@@ -1,134 +1,155 @@
-# Terraform AWS Infrastructure (모듈화)
+# Seoul Region Infrastructure
+
+Seoul 리전의 AWS 인프라를 관리합니다.
 
 ## 프로젝트 구조
 
 ```
-.
-├── main.tf                      # 메인 설정 및 모듈 호출
-├── variables.tf                 # 루트 변수
-├── outputs.tf                   # 루트 출력
-├── terraform.tfvars.example     # 변수 예제 파일
-├── modules/
-│   ├── tokyo/                   # Tokyo 리전 모듈
-│   │   ├── main.tf
-│   │   ├── variables.tf
-│   │   └── outputs.tf
-│   └── idc/                     # IDC 리전 모듈
-│       ├── main.tf
-│       ├── variables.tf
-│       └── outputs.tf
+Seoul/
+├── main.tf                      # 메인 설정 및 리소스
+├── variables.tf                 # 변수 정의
+├── outputs.tf                   # 출력 값
+└── terraform.tfvars.example     # 변수 예제
 ```
 
 ## 구성 요소
 
-### Tokyo 모듈 (ap-northeast-1)
-- **VPC**: 10.0.0.0/16
-- **NAT Gateway용 퍼블릭 서브넷** 2개 (AZ-a, AZ-c)
-- **Elastic Beanstalk용 프라이빗 서브넷** 2개 (AZ-a, AZ-c)
-- **CGW 인스턴스용 퍼블릭 서브넷** 1개
-- **Transit Gateway용 서브넷** 1개
-- **NAT Gateway** 2개
-- **CGW EC2 인스턴스** 1개
+### Seoul AWS VPC (20.0.0.0/16)
+- **VPC ID**: vpc-0ed96f16d7a1c201b
+- **Public NAT Subnets**: 2개 (AZ-a, AZ-c)
+  - NAT Gateways
+  - ELB(Load Balancer)
+- **Private Beanstalk Subnets**: 2개 (AZ-a, AZ-c)
+  - EC2 인스턴스
+- **Transit Gateway Subnet**: Seoul-Tokyo 연결
 
-### IDC 모듈 (도쿄 리전 내 배치)
-- **VPC**: 172.16.0.0/16
-- **CGW용 퍼블릭 서브넷** 1개 + CGW 인스턴스
-- **Transit Gateway용 서브넷** 1개
+### Seoul IDC VPC (10.0.0.0/16)
+- **VPC ID**: vpc-0d31886e9f4dc578c
+- **Public Subnets**: CGW 및 DB 인스턴스
+- **VPN Connection**: vpn-089edd593ccea148e (Seoul TGW ↔ Seoul IDC CGW)
+
+### Transit Gateway
+- **ID**: tgw-00aa475a8ec145dc4
+- **연결**:
+  - Seoul AWS VPC
+  - Seoul IDC VPC (VPN)
+  - Tokyo TGW (Peering)
+
+### Elastic Beanstalk
+- **Environment**: seoul-webapp-env
+- **Platform**: Python 3.11
+- **Instance Type**: t3.medium
+- **Load Balancer**: Application Load Balancer (internet-facing)
+  - **ELB Subnets**: 퍼블릭 NAT 서브넷 (인터넷 접속용)
+  - **EC2 Subnets**: 프라이빗 Beanstalk 서브넷 (보안)
+- **Auto Scaling**: 2-4 인스턴스
+- **CNAME**: seoul-webapp-env.eba-ztq5m3vp.ap-northeast-2.elasticbeanstalk.com
 
 ## 네트워크 통신
 
-- **도쿄 VPC ↔ IDC VPC**: 두 가지 연결 방식
-  1. **Transit Gateway**: 같은 리전 내 직접 연결
-  2. **Site-to-Site VPN**: CGW를 통한 IPsec VPN 터널 (수동 설정)
-     - IDC CGW 인스턴스를 Customer Gateway로 등록
-     - VPN Connection은 EC2 인스턴스에 직접 접속하여 수동 설정
-- **인터넷 통신**: 
-  - 도쿄 VPC: NAT Gateway 사용 (Beanstalk 서브넷)
-  - IDC VPC: Internet Gateway 사용 (CGW 서브넷)
+### Seoul AWS ↔ Seoul IDC
+- **VPN Connection**: Site-to-Site VPN (IPsec)
+- **Transit Gateway**: Seoul TGW를 통한 라우팅
+- **통신 경로**: Seoul Beanstalk → Seoul TGW → VPN → Seoul IDC DB
 
-## Site-to-Site VPN 설정 (EC2 간 직접 IPsec 터널)
+### Seoul ↔ Tokyo
+- **Transit Gateway Peering**: Seoul TGW ↔ Tokyo TGW
+- **통신 경로**: 
+  - Seoul AWS (20.0.0.0/16) ↔ Tokyo AWS (40.0.0.0/16)
+  - Seoul IDC (10.0.0.0/16) ↔ Tokyo IDC (30.0.0.0/16)
 
-Tokyo CGW와 IDC CGW 인스턴스 간 IPsec 터널이 **완전 자동으로 구성**됩니다:
+### 인터넷 통신
+- **퍼블릭 접속**: Internet Gateway → ELB (퍼블릭 서브넷)
+- **아웃바운드**: EC2 (프라이빗 서브넷) → NAT Gateway → Internet Gateway
 
-### 자동 설정 내용
-- 양쪽 CGW 인스턴스에 StrongSwan 자동 설치
-- Pre-shared Key 자동 생성 및 배포
-- IPsec 터널 설정 자동 구성
-- Source/Destination Check 자동 비활성화
-- 터널 자동 시작 및 연결
+## 사용 방법
 
-### 사용 방법
-
-1. **terraform.tfvars 파일 설정**:
+### 1. terraform.tfvars 파일 설정
 ```bash
-tokyo_key_name       = "your-key-name"
-ssh_private_key_path = "~/.ssh/your-key.pem"
+cp terraform.tfvars.example terraform.tfvars
+# seoul_key_name 및 ssh_private_key_path 설정
 ```
 
-2. **Terraform 실행**:
+### 2. Terraform 실행
 ```bash
+cd Seoul
 terraform init
+terraform plan
 terraform apply
 ```
 
-3. **VPN 상태 확인**:
+### 3. Beanstalk 웹 접속 확인
 ```bash
-# 엔드포인트 정보 확인
-terraform output vpn_endpoints
+# HTTP 접속
+curl http://seoul-webapp-env.eba-ztq5m3vp.ap-northeast-2.elasticbeanstalk.com
 
-# Tokyo CGW에서 확인
-ssh -i your-key.pem ec2-user@<TOKYO_CGW_IP>
-sudo strongswan status
+# 브라우저에서
+# http://seoul-webapp-env.eba-ztq5m3vp.ap-northeast-2.elasticbeanstalk.com
+```
+
+### 4. VPN 상태 확인
+```bash
+# VPN 연결 상태
+aws ec2 describe-vpn-connections \
+  --vpn-connection-ids vpn-089edd593ccea148e \
+  --region ap-northeast-2
 
 # IDC CGW에서 확인
 ssh -i your-key.pem ec2-user@<IDC_CGW_IP>
 sudo strongswan status
 ```
 
-### 주요 특징
-- **AWS Managed VPN 불필요**: EC2 인스턴스 간 직접 IPsec 연결
-- **비용 절감**: VPN Gateway 비용 없음
-- **완전 자동화**: 수동 설정 불필요
-- **양방향 통신**: 10.0.0.0/16 ↔ 172.16.0.0/16
+## Beanstalk 주요 설정
 
-### 주의사항
-- SSH private key 경로를 정확히 설정해야 합니다
-- Security Group에서 UDP 500, 4500 포트가 열려있어야 합니다
-- ESP 프로토콜(IP Protocol 50)이 허용되어야 합니다
+### VPC 설정
+- **VPC**: Seoul AWS VPC (vpc-0ed96f16d7a1c201b)
+- **ELBSubnets**: 퍼블릭 NAT 서브넷 (로드밸런서 배치)
+  - subnet-0e03e15d079667bfa
+  - subnet-0d7cc41f34a9b6aed
+- **Subnets**: 프라이빗 Beanstalk 서브넷 (EC2 인스턴스 배치)
+  - subnet-07ef92ca57b27667b
+  - subnet-0decc928be8ee6c4a
+- **ELBScheme**: public (인터넷 접속 가능)
+- **AssociatePublicIpAddress**: false (프라이빗 서브넷)
 
-## 모듈화 장점
-
-- **재사용성**: 각 모듈을 독립적으로 재사용 가능
-- **유지보수성**: 리전별로 코드가 분리되어 관리 용이
-- **확장성**: 새로운 리전 추가 시 모듈만 호출하면 됨
-- **테스트 용이**: 각 모듈을 독립적으로 테스트 가능
-
-## 사용 방법
-
-1. `terraform.tfvars.example`을 `terraform.tfvars`로 복사하고 키 페어 정보 입력:
-```bash
-cp terraform.tfvars.example terraform.tfvars
-```
-
-2. Terraform 초기화:
-```bash
-terraform init
-```
-
-3. 실행 계획 확인:
-```bash
-terraform plan
-```
-
-4. 인프라 배포:
-```bash
-terraform apply
-```
+### 보안
+- **Security Group**: HTTP(80), HTTPS(443) from 0.0.0.0/0
+- **Health Check**: TCP:80
+- **SSL/TLS**: ACM 인증서 적용 가능 (HTTPS 설정 시)
 
 ## 주의사항
 
-- EC2 인스턴스 실행을 위해 각 리전에 키 페어가 미리 생성되어 있어야 합니다
-- IDC 환경에서는 Elastic IP를 사용하지 않습니다
-- AMI ID는 2024년 기준이며, 최신 버전 확인 필요할 수 있습니다
-- 모듈을 수정할 때는 `terraform init -upgrade` 실행 필요
+- EC2 키 페어가 Seoul 리전에 미리 생성되어 있어야 합니다
+- Global VPC 모듈이 먼저 배포되어야 합니다
+- Transit Gateway 및 VPN 설정은 자동으로 구성됩니다
+- Beanstalk 환경 업데이트 시 약 3-5분 소요됩니다
+
+## 트러블슈팅
+
+### Beanstalk 웹 접속 불가
+1. ELB 상태 확인:
+   ```bash
+   aws elbv2 describe-load-balancers --region ap-northeast-2
+   ```
+
+2. Target Health 확인:
+   ```bash
+   aws elbv2 describe-target-health \
+     --target-group-arn <TG_ARN> \
+     --region ap-northeast-2
+   ```
+
+3. Security Group 확인:
+   ```bash
+   aws ec2 describe-security-groups \
+     --group-ids <SG_ID> \
+     --region ap-northeast-2
+   ```
+
+### VPN 연결 끊김
+1. VPN 상태 확인 후 재시작:
+   ```bash
+   ssh -i your-key.pem ec2-user@<IDC_CGW_IP>
+   sudo strongswan restart
+   ```
 

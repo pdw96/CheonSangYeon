@@ -5,6 +5,14 @@ terraform {
       version = "~> 5.0"
     }
   }
+
+  backend "s3" {
+    bucket         = "terraform-s3-cheonsangyeon"
+    key            = "terraform/global-dms/terraform.tfstate"
+    region         = "ap-northeast-2"
+    encrypt        = true
+    dynamodb_table = "terraform-Dynamo-CheonSangYeon"
+  }
 }
 
 # Seoul Provider
@@ -13,57 +21,19 @@ provider "aws" {
   region = "ap-northeast-2"
 }
 
-# Get current AWS account ID
-data "aws_caller_identity" "current" {
-  provider = aws.seoul
-}
-
-# Import Aurora outputs from S3 backend
-data "terraform_remote_state" "aurora" {
+# Get VPC remote state
+data "terraform_remote_state" "vpc" {
   backend = "s3"
   config = {
-    bucket = "aurora-global-db-backup-299145660695"
-    key    = "terraform/aurora-global/terraform.tfstate"
+    bucket = "terraform-s3-cheonsangyeon"
+    key    = "terraform/global-vpc/terraform.tfstate"
     region = "ap-northeast-2"
   }
 }
 
-# Get Seoul VPC for DMS
-data "aws_vpc" "seoul" {
+# Get current AWS account ID
+data "aws_caller_identity" "current" {
   provider = aws.seoul
-  filter {
-    name   = "tag:Name"
-    values = ["seoul-vpc"]
-  }
-}
-
-# Get Seoul Beanstalk subnets for DMS Replication Instance
-data "aws_subnets" "seoul_private" {
-  provider = aws.seoul
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.seoul.id]
-  }
-  filter {
-    name   = "tag:Name"
-    values = ["seoul-beanstalk-subnet-*"]
-  }
-}
-
-locals {
-  dms_subnet_ids = length(data.aws_subnets.seoul_private.ids) > 0 ? data.aws_subnets.seoul_private.ids : [
-    "subnet-09ca5bf59eab4a46d",
-    "subnet-0f79754b4cc788b26"
-  ]
-}
-
-# Get IDC VPC
-data "aws_vpc" "idc" {
-  provider = aws.seoul
-  filter {
-    name   = "tag:Name"
-    values = ["idc-vpc"]
-  }
 }
 
 # Get IDC DB Instance
@@ -77,6 +47,10 @@ data "aws_instance" "idc_db" {
     name   = "instance-state-name"
     values = ["running"]
   }
+}
+
+locals {
+  dms_subnet_ids = data.terraform_remote_state.vpc.outputs.seoul_private_beanstalk_subnet_ids
 }
 
 # DMS Subnet Group
@@ -154,7 +128,7 @@ resource "aws_security_group" "dms_replication" {
   provider    = aws.seoul
   name        = "dms-replication-sg"
   description = "Security group for DMS Replication Instance"
-  vpc_id      = data.aws_vpc.seoul.id
+  vpc_id      = data.terraform_remote_state.vpc.outputs.seoul_vpc_id
 
   # Allow access to IDC MySQL
   egress {
@@ -165,13 +139,13 @@ resource "aws_security_group" "dms_replication" {
     description = "MySQL to IDC"
   }
 
-  # Allow access to Aurora
+  # Allow access to Aurora via TGW
   egress {
     from_port   = 3306
     to_port     = 3306
     protocol    = "tcp"
-    cidr_blocks = ["20.0.0.0/16"]
-    description = "MySQL to Aurora"
+    cidr_blocks = ["20.0.0.0/16", "40.0.0.0/16"]
+    description = "MySQL to Aurora (Seoul and Tokyo)"
   }
 
   # Allow HTTPS for AWS API calls
@@ -212,12 +186,12 @@ resource "aws_dms_replication_instance" "migration" {
   ]
 }
 
-# Source Endpoint (IDC MySQL)
-resource "aws_dms_endpoint" "source_idc_mysql" {
+# Source Endpoint (IDC MariaDB)
+resource "aws_dms_endpoint" "source_idc_mariadb" {
   provider      = aws.seoul
-  endpoint_id   = "source-idc-mysql"
+  endpoint_id   = "source-idc-mariadb"
   endpoint_type = "source"
-  engine_name   = "mysql"
+  engine_name   = "mariadb"
   server_name   = data.aws_instance.idc_db.private_ip
   port          = 3306
   database_name = "idcdb"
@@ -226,7 +200,17 @@ resource "aws_dms_endpoint" "source_idc_mysql" {
   ssl_mode      = "none"
 
   tags = {
-    Name = "source-idc-mysql"
+    Name = "source-idc-mariadb"
+  }
+}
+
+# Get Aurora cluster endpoint from remote state
+data "terraform_remote_state" "aurora" {
+  backend = "s3"
+  config = {
+    bucket = "terraform-s3-cheonsangyeon"
+    key    = "terraform/global-aurora/terraform.tfstate"
+    region = "ap-northeast-2"
   }
 }
 
@@ -252,9 +236,9 @@ resource "aws_dms_endpoint" "target_aurora_mysql" {
 resource "aws_dms_replication_task" "migration_task" {
   provider                  = aws.seoul
   replication_task_id       = "idc-to-aurora-migration-task"
-  migration_type            = "full-load-and-cdc"
+  migration_type            = "full-load"  # Changed from full-load-and-cdc
   replication_instance_arn  = aws_dms_replication_instance.migration.replication_instance_arn
-  source_endpoint_arn       = aws_dms_endpoint.source_idc_mysql.endpoint_arn
+  source_endpoint_arn       = aws_dms_endpoint.source_idc_mariadb.endpoint_arn
   target_endpoint_arn       = aws_dms_endpoint.target_aurora_mysql.endpoint_arn
   table_mappings            = jsonencode({
     rules = [

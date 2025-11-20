@@ -5,6 +5,14 @@ terraform {
       version = "~> 5.0"
     }
   }
+
+  backend "s3" {
+    bucket         = "terraform-s3-cheonsangyeon"
+    key            = "terraform/global-tgw-peering/terraform.tfstate"
+    region         = "ap-northeast-2"
+    encrypt        = true
+    dynamodb_table = "terraform-Dynamo-CheonSangYeon"
+  }
 }
 
 # Seoul Provider

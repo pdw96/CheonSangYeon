@@ -1,0 +1,119 @@
+#!/bin/bash
+# AWS Managed VPN 자동 설정 스크립트 (Strongswan)
+# IDC Customer Gateway EC2 인스턴스용
+
+set -e
+
+echo "=== VPN 설정 시작 (Strongswan) ==="
+
+# 변수 설정 (Terraform에서 주입)
+TUNNEL1_OUTSIDE="${tunnel1_address}"
+TUNNEL2_OUTSIDE="${tunnel2_address}"
+TUNNEL1_PSK="${tunnel1_psk}"
+TUNNEL2_PSK="${tunnel2_psk}"
+LOCAL_CIDR="${local_cidr}"
+REMOTE_CIDR="${remote_cidr}"
+TOKYO_AWS_CIDR="${tokyo_aws_cidr}"
+TOKYO_IDC_CIDR="${tokyo_idc_cidr}"
+
+# IP 포워딩 활성화
+echo "net.ipv4.ip_forward = 1" >> /etc/sysctl.conf
+sysctl -p
+
+# Strongswan 및 iptables 설치
+yum update -y
+yum install -y strongswan iptables-services
+
+# Strongswan 설정 파일 생성
+cat > /etc/strongswan/ipsec.conf <<CONF
+config setup
+    charondebug="ike 2, knl 2, cfg 2, net 2, esp 2, dmn 2, mgr 2"
+
+conn %default
+    ikelifetime=28800s
+    keylife=3600s
+    rekeymargin=540s
+    keyingtries=%forever
+    keyexchange=ikev2
+    mobike=no
+    ike=aes128-sha1-modp2048!
+    esp=aes128-sha1-modp2048!
+
+conn tunnel1
+    auto=start
+    left=%defaultroute
+    leftid=%any
+    leftsubnet=$LOCAL_CIDR
+    right=$TUNNEL1_OUTSIDE
+    rightsubnet=0.0.0.0/0
+    authby=secret
+    type=tunnel
+    dpdaction=restart
+    closeaction=restart
+    dpddelay=10s
+    dpdtimeout=30s
+
+conn tunnel2
+    auto=start
+    left=%defaultroute
+    leftid=%any
+    leftsubnet=$LOCAL_CIDR
+    right=$TUNNEL2_OUTSIDE
+    rightsubnet=0.0.0.0/0
+    authby=secret
+    type=tunnel
+    dpdaction=restart
+    closeaction=restart
+    dpddelay=10s
+    dpdtimeout=30s
+CONF
+
+# PSK 설정
+cat > /etc/strongswan/ipsec.secrets <<SECRETS
+%any $TUNNEL1_OUTSIDE : PSK "$TUNNEL1_PSK"
+%any $TUNNEL2_OUTSIDE : PSK "$TUNNEL2_PSK"
+SECRETS
+chmod 600 /etc/strongswan/ipsec.secrets
+
+# iptables 설정
+systemctl enable iptables
+systemctl start iptables
+
+# 기존 FORWARD 규칙 초기화
+iptables -F FORWARD
+iptables -t nat -F
+
+# FORWARD 체인 기본 정책을 ACCEPT로 설정
+iptables -P FORWARD ACCEPT
+
+# NAT 설정 - VPN에서 들어온 트래픽을 로컬 네트워크로 SNAT
+iptables -t nat -A POSTROUTING -s $REMOTE_CIDR -d $LOCAL_CIDR -j MASQUERADE
+iptables -t nat -A POSTROUTING -s $TOKYO_AWS_CIDR -d $LOCAL_CIDR -j MASQUERADE
+iptables -t nat -A POSTROUTING -s $TOKYO_IDC_CIDR -d $LOCAL_CIDR -j MASQUERADE
+
+# 외부로 나가는 트래픽도 MASQUERADE
+iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+
+# FORWARD 규칙: VPN 트래픽 양방향 허용
+iptables -I FORWARD 1 -s $LOCAL_CIDR -d $REMOTE_CIDR -j ACCEPT
+iptables -I FORWARD 2 -s $REMOTE_CIDR -d $LOCAL_CIDR -j ACCEPT
+
+# Tokyo AWS/IDC와의 트래픽 허용
+iptables -I FORWARD 3 -s $LOCAL_CIDR -d $TOKYO_AWS_CIDR -j ACCEPT
+iptables -I FORWARD 4 -s $TOKYO_AWS_CIDR -d $LOCAL_CIDR -j ACCEPT
+iptables -I FORWARD 5 -s $LOCAL_CIDR -d $TOKYO_IDC_CIDR -j ACCEPT
+iptables -I FORWARD 6 -s $TOKYO_IDC_CIDR -d $LOCAL_CIDR -j ACCEPT
+
+service iptables save
+
+# Strongswan 시작
+systemctl enable strongswan
+systemctl start strongswan
+
+# 연결 대기 (30초)
+sleep 30
+
+# 상태 확인
+strongswan status
+
+echo "=== VPN 설정 완료 (Strongswan) ==="

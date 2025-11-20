@@ -9,8 +9,8 @@ output "replication_instance_id" {
 }
 
 output "source_endpoint_arn" {
-  description = "ARN of the Source Endpoint (IDC MySQL)"
-  value       = aws_dms_endpoint.source_idc_mysql.endpoint_arn
+  description = "ARN of the Source Endpoint (IDC MariaDB)"
+  value       = aws_dms_endpoint.source_idc_mariadb.endpoint_arn
 }
 
 output "target_endpoint_arn" {
@@ -53,6 +53,6 @@ output "migration_instructions" {
     - CDC (Change Data Capture): 실시간 변경사항 동기화
     
     Source: ${data.aws_instance.idc_db.private_ip}:3306/idcdb
-    Target: ${data.terraform_remote_state.aurora.outputs.seoul_cluster_endpoint}:3306/globaldb
+    Target: ${aws_dms_endpoint.target_aurora_mysql.server_name}:3306/globaldb
   EOT
 }

@@ -8,10 +8,11 @@ terraform {
 
   # S3 Backend for Terraform State
   backend "s3" {
-    bucket  = ""  # terraform init 시 -backend-config로 지정
-    key     = "terraform/aurora-global/terraform.tfstate"
-    region  = "ap-northeast-2"
-    encrypt = true
+    bucket         = "terraform-s3-cheonsangyeon"
+    key            = "terraform/global-aurora/terraform.tfstate"
+    region         = "ap-northeast-2"
+    encrypt        = true
+    dynamodb_table = "terraform-Dynamo-CheonSangYeon"
   }
 }
 
@@ -35,56 +36,22 @@ data "terraform_remote_state" "s3" {
   }
 }
 
-# Data source: Get Seoul VPC
-data "aws_vpc" "seoul" {
-  provider = aws.seoul
-  filter {
-    name   = "tag:Name"
-    values = ["seoul-vpc"]
+# Import VPC from global/vpc module
+data "terraform_remote_state" "vpc" {
+  backend = "s3"
+  config = {
+    bucket = "terraform-s3-cheonsangyeon"
+    key    = "terraform/global-vpc/terraform.tfstate"
+    region = "ap-northeast-2"
   }
 }
 
-# Data source: Get all private subnets in Seoul VPC for Aurora
-data "aws_subnets" "seoul_private" {
-  provider = aws.seoul
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.seoul.id]
-  }
-  filter {
-    name   = "tag:Name"
-    values = ["seoul-beanstalk-subnet-*", "seoul-private-subnet*"]
-  }
-}
-
-# Fallback: Use specific subnet IDs if data source returns empty
+# Use VPC outputs from remote state
 locals {
-  seoul_subnet_ids = length(data.aws_subnets.seoul_private.ids) > 0 ? data.aws_subnets.seoul_private.ids : [
-    "subnet-09ca5bf59eab4a46d",
-    "subnet-0f79754b4cc788b26"
-  ]
-}
-
-# Data source: Get IDC VPC
-data "aws_vpc" "idc" {
-  provider = aws.seoul
-  filter {
-    name   = "tag:Name"
-    values = ["idc-vpc"]
-  }
-}
-
-# Data source: Get IDC DB instance for migration
-data "aws_instance" "idc_db" {
-  provider = aws.seoul
-  filter {
-    name   = "tag:Name"
-    values = ["idc-db-instance"]
-  }
-  filter {
-    name   = "instance-state-name"
-    values = ["running"]
-  }
+  seoul_vpc_id     = data.terraform_remote_state.vpc.outputs.seoul_vpc_id
+  seoul_subnet_ids = data.terraform_remote_state.vpc.outputs.seoul_private_beanstalk_subnet_ids
+  tokyo_vpc_id     = data.terraform_remote_state.vpc.outputs.tokyo_vpc_id
+  tokyo_subnet_ids = data.terraform_remote_state.vpc.outputs.tokyo_private_beanstalk_subnet_ids
 }
 
 # DB Subnet Group for Aurora (Seoul Private Subnets)
@@ -95,52 +62,6 @@ resource "aws_db_subnet_group" "aurora_seoul" {
 
   tags = {
     Name = "aurora-global-seoul-subnet-group"
-  }
-}
-
-# Security Group for Aurora
-resource "aws_security_group" "aurora_seoul" {
-  provider    = aws.seoul
-  name        = "aurora-global-seoul-sg"
-  description = "Security group for Aurora Global Database"
-  vpc_id      = data.aws_vpc.seoul.id
-
-  # MySQL/Aurora 포트 - Beanstalk에서 접근
-  ingress {
-    from_port   = 3306
-    to_port     = 3306
-    protocol    = "tcp"
-    cidr_blocks = ["20.0.0.0/16"]
-    description = "MySQL from Seoul VPC"
-  }
-
-  # IDC에서 마이그레이션을 위한 접근
-  ingress {
-    from_port   = 3306
-    to_port     = 3306
-    protocol    = "tcp"
-    cidr_blocks = ["10.0.0.0/16"]
-    description = "MySQL from IDC for migration"
-  }
-
-  # Tokyo 리전에서 접근 (향후 글로벌 클러스터 확장용)
-  ingress {
-    from_port   = 3306
-    to_port     = 3306
-    protocol    = "tcp"
-    cidr_blocks = ["40.0.0.0/16", "30.0.0.0/16"]
-    description = "MySQL from Tokyo regions"
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = "aurora-global-seoul-sg"
   }
 }
 
@@ -184,19 +105,8 @@ resource "aws_iam_policy" "aurora_s3_policy" {
           "s3:ListBucket"
         ]
         Resource = [
-          data.terraform_remote_state.s3.outputs.s3_bucket_arn,
-          "${data.terraform_remote_state.s3.outputs.s3_bucket_arn}/*"
-        ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:ListBucket"
-        ]
-        Resource = [
-          data.terraform_remote_state.s3.outputs.s3_bucket_replica_arn,
-          "${data.terraform_remote_state.s3.outputs.s3_bucket_replica_arn}/*"
+          "arn:aws:s3:::terraform-s3-cheonsangyeon",
+          "arn:aws:s3:::terraform-s3-cheonsangyeon/*"
         ]
       }
     ]
@@ -277,7 +187,7 @@ resource "aws_rds_cluster" "aurora_seoul" {
   master_password                 = "AdminPassword123!"
   db_subnet_group_name            = aws_db_subnet_group.aurora_seoul.name
   db_cluster_parameter_group_name = aws_rds_cluster_parameter_group.aurora_global.name
-  vpc_security_group_ids          = [aws_security_group.aurora_seoul.id]
+  vpc_security_group_ids          = [data.terraform_remote_state.vpc.outputs.seoul_aurora_security_group_id]
   
   backup_retention_period      = 7
   preferred_backup_window      = "03:00-04:00"
@@ -310,7 +220,7 @@ resource "aws_rds_cluster_instance" "aurora_seoul_writer" {
   provider                     = aws.seoul
   identifier                   = "aurora-global-seoul-writer"
   cluster_identifier           = aws_rds_cluster.aurora_seoul.id
-  instance_class               = "db.r6g.large"  # 글로벌 DB 지원 인스턴스 유형
+  instance_class               = "db.r5.large"
   engine                       = aws_rds_cluster.aurora_seoul.engine
   engine_version               = aws_rds_cluster.aurora_seoul.engine_version
   db_parameter_group_name      = aws_db_parameter_group.aurora_global.name
@@ -328,7 +238,7 @@ resource "aws_rds_cluster_instance" "aurora_seoul_reader1" {
   provider                     = aws.seoul
   identifier                   = "aurora-global-seoul-reader1"
   cluster_identifier           = aws_rds_cluster.aurora_seoul.id
-  instance_class               = "db.r6g.large"
+  instance_class               = "db.r5.large"
   engine                       = aws_rds_cluster.aurora_seoul.engine
   engine_version               = aws_rds_cluster.aurora_seoul.engine_version
   db_parameter_group_name      = aws_db_parameter_group.aurora_global.name
@@ -337,24 +247,6 @@ resource "aws_rds_cluster_instance" "aurora_seoul_reader1" {
 
   tags = {
     Name = "aurora-global-seoul-reader1"
-    Role = "reader"
-  }
-}
-
-# Reader Instance 2 (Read Replica for HA)
-resource "aws_rds_cluster_instance" "aurora_seoul_reader2" {
-  provider                     = aws.seoul
-  identifier                   = "aurora-global-seoul-reader2"
-  cluster_identifier           = aws_rds_cluster.aurora_seoul.id
-  instance_class               = "db.r6g.large"
-  engine                       = aws_rds_cluster.aurora_seoul.engine
-  engine_version               = aws_rds_cluster.aurora_seoul.engine_version
-  db_parameter_group_name      = aws_db_parameter_group.aurora_global.name
-  auto_minor_version_upgrade   = false
-  performance_insights_enabled = true
-
-  tags = {
-    Name = "aurora-global-seoul-reader2"
     Role = "reader"
   }
 }
@@ -397,4 +289,354 @@ resource "aws_cloudwatch_metric_alarm" "aurora_connections" {
 # Get AWS Account ID
 data "aws_caller_identity" "current" {
   provider = aws.seoul
+}
+
+# =======================
+# Tokyo Region Resources
+# =======================
+
+# KMS Key for Tokyo Aurora Encryption
+resource "aws_kms_key" "aurora_tokyo" {
+  provider                = aws.tokyo
+  description             = "KMS key for Aurora Global Database Tokyo encryption"
+  deletion_window_in_days = 10
+  enable_key_rotation     = true
+
+  tags = {
+    Name = "aurora-global-tokyo-kms"
+  }
+}
+
+resource "aws_kms_alias" "aurora_tokyo" {
+  provider      = aws.tokyo
+  name          = "alias/aurora-global-tokyo"
+  target_key_id = aws_kms_key.aurora_tokyo.key_id
+}
+
+# DB Subnet Group for Aurora (Tokyo Private Subnets)
+resource "aws_db_subnet_group" "aurora_tokyo" {
+  provider   = aws.tokyo
+  name       = "aurora-global-tokyo-subnet-group"
+  subnet_ids = local.tokyo_subnet_ids
+
+  tags = {
+    Name = "aurora-global-tokyo-subnet-group"
+  }
+}
+
+# RDS Cluster Parameter Group for Tokyo
+resource "aws_rds_cluster_parameter_group" "aurora_tokyo" {
+  provider    = aws.tokyo
+  name        = "aurora-global-tokyo-mysql80-params"
+  family      = "aurora-mysql8.0"
+  description = "Aurora MySQL 8.0 cluster parameter group for Tokyo"
+
+  parameter {
+    name  = "character_set_server"
+    value = "utf8mb4"
+  }
+
+  parameter {
+    name  = "collation_server"
+    value = "utf8mb4_unicode_ci"
+  }
+
+  parameter {
+    name  = "time_zone"
+    value = "Asia/Tokyo"
+  }
+
+  tags = {
+    Name = "aurora-global-tokyo-mysql80-params"
+  }
+}
+
+# DB Parameter Group for Tokyo
+resource "aws_db_parameter_group" "aurora_tokyo" {
+  provider    = aws.tokyo
+  name        = "aurora-global-tokyo-mysql80-db-params"
+  family      = "aurora-mysql8.0"
+  description = "Aurora MySQL 8.0 DB parameter group for Tokyo"
+
+  parameter {
+    name  = "max_connections"
+    value = "1000"
+  }
+
+  tags = {
+    Name = "aurora-global-tokyo-mysql80-db-params"
+  }
+}
+
+# Secondary Cluster (Tokyo) - Global Database 멤버
+resource "aws_rds_cluster" "aurora_tokyo" {
+  provider                        = aws.tokyo
+  cluster_identifier              = "aurora-global-tokyo-cluster"
+  engine                          = aws_rds_global_cluster.aurora_global.engine
+  engine_version                  = aws_rds_global_cluster.aurora_global.engine_version
+  global_cluster_identifier       = aws_rds_global_cluster.aurora_global.id
+  db_subnet_group_name            = aws_db_subnet_group.aurora_tokyo.name
+  db_cluster_parameter_group_name = aws_rds_cluster_parameter_group.aurora_tokyo.name
+  vpc_security_group_ids          = [data.terraform_remote_state.vpc.outputs.tokyo_aurora_security_group_id]
+  kms_key_id                      = aws_kms_key.aurora_tokyo.arn
+  
+  backup_retention_period      = 7
+  preferred_backup_window      = "03:00-04:00"
+  preferred_maintenance_window = "mon:04:00-mon:05:00"
+  
+  enabled_cloudwatch_logs_exports = ["audit", "error", "general", "slowquery"]
+  
+  skip_final_snapshot       = false
+  final_snapshot_identifier = "aurora-global-tokyo-final-snapshot-${formatdate("YYYY-MM-DD-hhmm", timestamp())}"
+
+  tags = {
+    Name        = "aurora-global-tokyo-cluster"
+    Environment = "production"
+    Region      = "secondary"
+  }
+
+  lifecycle {
+    ignore_changes = [
+      final_snapshot_identifier,
+      replication_source_identifier
+    ]
+  }
+
+  depends_on = [aws_rds_cluster_instance.aurora_seoul_writer]
+}
+
+# Tokyo Reader Instance 1
+resource "aws_rds_cluster_instance" "aurora_tokyo_reader1" {
+  provider                     = aws.tokyo
+  identifier                   = "aurora-global-tokyo-reader1"
+  cluster_identifier           = aws_rds_cluster.aurora_tokyo.id
+  instance_class               = "db.r5.large"
+  engine                       = aws_rds_cluster.aurora_tokyo.engine
+  engine_version               = aws_rds_cluster.aurora_tokyo.engine_version
+  db_parameter_group_name      = aws_db_parameter_group.aurora_tokyo.name
+  auto_minor_version_upgrade   = false
+  performance_insights_enabled = true
+
+  tags = {
+    Name = "aurora-global-tokyo-reader1"
+    Role = "reader"
+  }
+}
+
+# =======================
+# RDS Proxy for Seoul
+# =======================
+
+# Secrets Manager Secret for RDS Proxy (Seoul)
+resource "aws_secretsmanager_secret" "rds_proxy_seoul" {
+  provider                = aws.seoul
+  name                    = "rds-proxy-aurora-seoul-credentials"
+  description             = "Aurora database credentials for RDS Proxy"
+  recovery_window_in_days = 7
+
+  tags = {
+    Name = "rds-proxy-aurora-seoul-credentials"
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "rds_proxy_seoul" {
+  provider      = aws.seoul
+  secret_id     = aws_secretsmanager_secret.rds_proxy_seoul.id
+  secret_string = jsonencode({
+    username = "admin"
+    password = "AdminPassword123!"
+  })
+}
+
+# IAM Role for RDS Proxy (Seoul)
+resource "aws_iam_role" "rds_proxy_seoul" {
+  provider = aws.seoul
+  name     = "aurora-rds-proxy-seoul-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "rds.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name = "aurora-rds-proxy-seoul-role"
+  }
+}
+
+# IAM Policy for RDS Proxy to access Secrets Manager (Seoul)
+resource "aws_iam_role_policy" "rds_proxy_seoul" {
+  provider = aws.seoul
+  name     = "aurora-rds-proxy-seoul-policy"
+  role     = aws_iam_role.rds_proxy_seoul.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret"
+        ]
+        Resource = aws_secretsmanager_secret.rds_proxy_seoul.arn
+      }
+    ]
+  })
+}
+
+# RDS Proxy for Seoul Cluster
+resource "aws_db_proxy" "aurora_seoul" {
+  provider               = aws.seoul
+  name                   = "aurora-global-seoul-proxy"
+  engine_family          = "MYSQL"
+  auth {
+    auth_scheme = "SECRETS"
+    iam_auth    = "DISABLED"
+    secret_arn  = aws_secretsmanager_secret.rds_proxy_seoul.arn
+  }
+  role_arn               = aws_iam_role.rds_proxy_seoul.arn
+  vpc_subnet_ids         = local.seoul_subnet_ids
+  require_tls            = false
+  idle_client_timeout    = 1800
+
+  tags = {
+    Name = "aurora-global-seoul-proxy"
+  }
+}
+
+# RDS Proxy Target Group (Seoul)
+resource "aws_db_proxy_default_target_group" "aurora_seoul" {
+  provider      = aws.seoul
+  db_proxy_name = aws_db_proxy.aurora_seoul.name
+
+  connection_pool_config {
+    connection_borrow_timeout    = 120
+    max_connections_percent      = 100
+    max_idle_connections_percent = 50
+  }
+}
+
+# RDS Proxy Target (Seoul)
+resource "aws_db_proxy_target" "aurora_seoul" {
+  provider               = aws.seoul
+  db_proxy_name          = aws_db_proxy.aurora_seoul.name
+  target_group_name      = aws_db_proxy_default_target_group.aurora_seoul.name
+  db_cluster_identifier  = aws_rds_cluster.aurora_seoul.id
+}
+
+# =======================
+# RDS Proxy for Tokyo
+# =======================
+
+# Secrets Manager Secret for RDS Proxy (Tokyo)
+resource "aws_secretsmanager_secret" "rds_proxy_tokyo" {
+  provider                = aws.tokyo
+  name                    = "rds-proxy-aurora-tokyo-credentials"
+  description             = "Aurora database credentials for RDS Proxy Tokyo"
+  recovery_window_in_days = 7
+
+  tags = {
+    Name = "rds-proxy-aurora-tokyo-credentials"
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "rds_proxy_tokyo" {
+  provider      = aws.tokyo
+  secret_id     = aws_secretsmanager_secret.rds_proxy_tokyo.id
+  secret_string = jsonencode({
+    username = "admin"
+    password = "AdminPassword123!"
+  })
+}
+
+# IAM Role for RDS Proxy (Tokyo)
+resource "aws_iam_role" "rds_proxy_tokyo" {
+  provider = aws.tokyo
+  name     = "aurora-rds-proxy-tokyo-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "rds.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name = "aurora-rds-proxy-tokyo-role"
+  }
+}
+
+# IAM Policy for RDS Proxy to access Secrets Manager (Tokyo)
+resource "aws_iam_role_policy" "rds_proxy_tokyo" {
+  provider = aws.tokyo
+  name     = "aurora-rds-proxy-tokyo-policy"
+  role     = aws_iam_role.rds_proxy_tokyo.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret"
+        ]
+        Resource = aws_secretsmanager_secret.rds_proxy_tokyo.arn
+      }
+    ]
+  })
+}
+
+# RDS Proxy for Tokyo Cluster
+resource "aws_db_proxy" "aurora_tokyo" {
+  provider               = aws.tokyo
+  name                   = "aurora-global-tokyo-proxy"
+  engine_family          = "MYSQL"
+  auth {
+    auth_scheme = "SECRETS"
+    iam_auth    = "DISABLED"
+    secret_arn  = aws_secretsmanager_secret.rds_proxy_tokyo.arn
+  }
+  role_arn               = aws_iam_role.rds_proxy_tokyo.arn
+  vpc_subnet_ids         = local.tokyo_subnet_ids
+  require_tls            = false
+  idle_client_timeout    = 1800
+
+  tags = {
+    Name = "aurora-global-tokyo-proxy"
+  }
+}
+
+# RDS Proxy Target Group (Tokyo)
+resource "aws_db_proxy_default_target_group" "aurora_tokyo" {
+  provider      = aws.tokyo
+  db_proxy_name = aws_db_proxy.aurora_tokyo.name
+
+  connection_pool_config {
+    connection_borrow_timeout    = 120
+    max_connections_percent      = 100
+    max_idle_connections_percent = 50
+  }
+}
+
+# RDS Proxy Target (Tokyo)
+resource "aws_db_proxy_target" "aurora_tokyo" {
+  provider               = aws.tokyo
+  db_proxy_name          = aws_db_proxy.aurora_tokyo.name
+  target_group_name      = aws_db_proxy_default_target_group.aurora_tokyo.name
+  db_cluster_identifier  = aws_rds_cluster.aurora_tokyo.id
 }

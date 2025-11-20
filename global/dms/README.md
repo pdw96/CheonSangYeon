@@ -1,8 +1,68 @@
 # AWS DMS - IDC MySQL to Aurora Migration
 
-AWS Database Migration Service를 사용하여 IDC MySQL을 Aurora Global Database로 마이그레이션합니다.
+> ⚠️ **현재 상태**: 이 모듈은 Terraform state에서 제거되었습니다.
+> 
+> DMS 리소스가 Terraform 관리에서 제외되어 AWS 콘솔이나 CLI로 수동 관리되고 있습니다.
+> 필요 시 다시 Terraform으로 가져오려면 아래 "재활성화" 섹션을 참고하세요.
 
-## 마이그레이션 전략
+## 현재 상태
+
+### 제거된 리소스
+- DMS Replication Instance
+- DMS Endpoints (Source, Target)
+- DMS Replication Task
+- Subnet Group
+- IAM Roles
+
+### 제거 이유
+- ENI(Elastic Network Interface) 권한 문제로 서브넷 삭제 실패
+- DMS 리소스를 Terraform state에서 제거하여 수동 삭제 완료
+
+### 제거 명령 기록
+```bash
+# State에서 제거
+terraform state rm aws_dms_replication_instance.main
+terraform state rm aws_dms_endpoint.source
+terraform state rm aws_dms_endpoint.target
+terraform state rm aws_dms_replication_task.main
+terraform state rm aws_dms_replication_subnet_group.main
+terraform state rm aws_iam_role.dms_vpc_role
+
+# AWS 리소스 수동 삭제
+aws dms delete-replication-task --replication-task-arn <TASK_ARN>
+aws dms delete-replication-instance --replication-instance-arn <INSTANCE_ARN>
+```
+
+---
+
+## 재활성화 방법
+
+DMS를 다시 Terraform으로 관리하려면:
+
+### 1. 기존 리소스가 없는 경우 (새로 생성)
+```bash
+cd global/dms
+terraform init
+terraform plan
+terraform apply
+```
+
+### 2. AWS에 기존 DMS 리소스가 있는 경우 (Import)
+```bash
+# Replication Instance Import
+terraform import aws_dms_replication_instance.main <INSTANCE_ARN>
+
+# Endpoints Import
+terraform import aws_dms_endpoint.source <SOURCE_ENDPOINT_ARN>
+terraform import aws_dms_endpoint.target <TARGET_ENDPOINT_ARN>
+
+# Task Import
+terraform import aws_dms_replication_task.main <TASK_ARN>
+```
+
+---
+
+## 마이그레이션 전략 (참고용)
 
 ### Full Load + CDC (Change Data Capture)
 1. **Full Load**: IDC MySQL의 모든 기존 데이터를 Aurora로 복사
