@@ -144,14 +144,6 @@ resource "aws_route_table" "seoul_private" {
   }
 }
 
-resource "aws_route" "seoul_private_to_idc" {
-  count                  = var.seoul_transit_gateway_id != "" ? 1 : 0
-  provider               = aws.seoul
-  route_table_id         = aws_route_table.seoul_private.id
-  destination_cidr_block = "10.0.0.0/16"
-  transit_gateway_id     = var.seoul_transit_gateway_id
-}
-
 resource "aws_route_table_association" "seoul_private_beanstalk" {
   provider       = aws.seoul
   count          = length(var.seoul_beanstalk_subnet_cidrs)
@@ -558,34 +550,6 @@ resource "aws_route_table" "seoul_idc_private" {
   }
 }
 
-# Seoul IDC Private Route Table Routes
-resource "aws_route" "seoul_idc_to_seoul_aws" {
-  provider               = aws.seoul
-  route_table_id         = aws_route_table.seoul_idc_private.id
-  destination_cidr_block = var.seoul_vpc_cidr
-  network_interface_id   = var.seoul_cgw_network_interface_id
-  
-  count = var.seoul_cgw_network_interface_id != "" ? 1 : 0
-}
-
-resource "aws_route" "seoul_idc_to_tokyo_idc" {
-  provider               = aws.seoul
-  route_table_id         = aws_route_table.seoul_idc_private.id
-  destination_cidr_block = var.tokyo_idc_vpc_cidr
-  network_interface_id   = var.seoul_cgw_network_interface_id
-  
-  count = var.seoul_cgw_network_interface_id != "" ? 1 : 0
-}
-
-resource "aws_route" "seoul_idc_to_tokyo_aws" {
-  provider               = aws.seoul
-  route_table_id         = aws_route_table.seoul_idc_private.id
-  destination_cidr_block = var.tokyo_vpc_cidr
-  network_interface_id   = var.seoul_cgw_network_interface_id
-  
-  count = var.seoul_cgw_network_interface_id != "" ? 1 : 0
-}
-
 resource "aws_route_table_association" "seoul_idc_public" {
   provider       = aws.seoul
   subnet_id      = aws_subnet.seoul_idc_public.id
@@ -767,33 +731,6 @@ resource "aws_route_table" "tokyo_idc_private" {
 }
 
 # Tokyo IDC Private Route Table Routes
-resource "aws_route" "tokyo_idc_to_seoul_idc" {
-  provider               = aws.tokyo
-  route_table_id         = aws_route_table.tokyo_idc_private.id
-  destination_cidr_block = var.seoul_idc_vpc_cidr
-  network_interface_id   = var.tokyo_cgw_network_interface_id
-  
-  count = var.tokyo_cgw_network_interface_id != "" ? 1 : 0
-}
-
-resource "aws_route" "tokyo_idc_to_seoul_aws" {
-  provider               = aws.tokyo
-  route_table_id         = aws_route_table.tokyo_idc_private.id
-  destination_cidr_block = var.seoul_vpc_cidr
-  network_interface_id   = var.tokyo_cgw_network_interface_id
-  
-  count = var.tokyo_cgw_network_interface_id != "" ? 1 : 0
-}
-
-resource "aws_route" "tokyo_idc_to_tokyo_aws" {
-  provider               = aws.tokyo
-  route_table_id         = aws_route_table.tokyo_idc_private.id
-  destination_cidr_block = var.tokyo_vpc_cidr
-  network_interface_id   = var.tokyo_cgw_network_interface_id
-  
-  count = var.tokyo_cgw_network_interface_id != "" ? 1 : 0
-}
-
 resource "aws_route_table_association" "tokyo_idc_public" {
   provider       = aws.tokyo
   subnet_id      = aws_subnet.tokyo_idc_public.id
@@ -896,44 +833,4 @@ resource "aws_security_group" "tokyo_idc_db" {
   tags = {
     Name = "tokyo-idc-db-sg"
   }
-}
-
-# ===== Cross-Region Routing =====
-
-# Seoul AWS Private RT에 Tokyo CIDR 추가 (Transit Gateway 사용 시)
-resource "aws_route" "seoul_private_to_tokyo_aws" {
-  count = var.seoul_transit_gateway_id != "" ? 1 : 0
-
-  provider               = aws.seoul
-  route_table_id         = aws_route_table.seoul_private.id
-  destination_cidr_block = "40.0.0.0/16"
-  transit_gateway_id     = var.seoul_transit_gateway_id
-}
-
-resource "aws_route" "seoul_private_to_tokyo_idc" {
-  count = var.seoul_transit_gateway_id != "" ? 1 : 0
-
-  provider               = aws.seoul
-  route_table_id         = aws_route_table.seoul_private.id
-  destination_cidr_block = "30.0.0.0/16"
-  transit_gateway_id     = var.seoul_transit_gateway_id
-}
-
-# Tokyo AWS Private RT에 Seoul CIDR 추가 (Transit Gateway 사용 시)
-resource "aws_route" "tokyo_private_to_seoul_aws" {
-  count = var.tokyo_transit_gateway_id != "" ? 1 : 0
-
-  provider               = aws.tokyo
-  route_table_id         = aws_route_table.tokyo_private.id
-  destination_cidr_block = "20.0.0.0/16"
-  transit_gateway_id     = var.tokyo_transit_gateway_id
-}
-
-resource "aws_route" "tokyo_private_to_seoul_idc" {
-  count = var.tokyo_transit_gateway_id != "" ? 1 : 0
-
-  provider               = aws.tokyo
-  route_table_id         = aws_route_table.tokyo_private.id
-  destination_cidr_block = "10.0.0.0/16"
-  transit_gateway_id     = var.tokyo_transit_gateway_id
 }

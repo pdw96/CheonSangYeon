@@ -84,12 +84,14 @@ resource "aws_eip_association" "cgw" {
 
 # DB Instance
 resource "aws_instance" "db" {
-  ami                    = var.ami_id
-  instance_type          = var.db_instance_type
-  subnet_id              = var.db_subnet_id
-  vpc_security_group_ids = [var.db_security_group_id]
-  key_name               = var.key_name
-  user_data              = var.db_config_script != "" ? var.db_config_script : null
+  ami                         = var.ami_id
+  instance_type               = var.db_instance_type
+  subnet_id                   = var.db_subnet_id
+  vpc_security_group_ids      = [var.db_security_group_id]
+  key_name                    = var.key_name
+  user_data                   = var.db_config_script != "" ? var.db_config_script : null
+  associate_public_ip_address = true  # 임시 외부 접속용
+  iam_instance_profile        = aws_iam_instance_profile.ec2_profile.name
 
   tags = {
     Name = "${var.environment}-db-instance"

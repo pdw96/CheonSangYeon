@@ -70,25 +70,29 @@ module "idc" {
   depends_on = [aws_vpn_connection.tokyo_to_idc]
 }
 
-# Transit Gateway (도쿄 리전) - 기존 TGW 사용
-data "aws_ec2_transit_gateway" "main" {
-  provider = aws.tokyo
-  id       = "tgw-07066acdcabff061f"
+# Transit Gateway (도쿄 리전)
+resource "aws_ec2_transit_gateway" "main" {
+  provider                        = aws.tokyo
+  description                     = "Tokyo Transit Gateway"
+  default_route_table_association = "enable"
+  default_route_table_propagation = "enable"
+  dns_support                     = "enable"
+  vpn_ecmp_support                = "enable"
 
-  filter {
-    name   = "state"
-    values = ["available"]
+  tags = {
+    Name = "tokyo-tgw"
   }
 }
 
-# Transit Gateway Attachment - Tokyo VPC (기존 Attachment 사용)
-data "aws_ec2_transit_gateway_vpc_attachment" "tokyo" {
-  provider = aws.tokyo
-  id       = "tgw-attach-0fa2283ea7bae52c0"
+# Transit Gateway Attachment - Tokyo VPC
+resource "aws_ec2_transit_gateway_vpc_attachment" "tokyo" {
+  provider           = aws.tokyo
+  subnet_ids         = [data.terraform_remote_state.global_vpc.outputs.tokyo_tgw_subnet_id]
+  transit_gateway_id = aws_ec2_transit_gateway.main.id
+  vpc_id             = data.terraform_remote_state.global_vpc.outputs.tokyo_vpc_id
 
-  filter {
-    name   = "state"
-    values = ["available"]
+  tags = {
+    Name = "tokyo-vpc-tgw-attachment"
   }
 }
 
@@ -119,7 +123,7 @@ resource "aws_customer_gateway" "idc" {
 # VPN Connection (Tokyo Transit Gateway ↔ IDC Customer Gateway)
 resource "aws_vpn_connection" "tokyo_to_idc" {
   provider            = aws.tokyo
-  transit_gateway_id  = data.aws_ec2_transit_gateway.main.id
+  transit_gateway_id  = aws_ec2_transit_gateway.main.id
   customer_gateway_id = aws_customer_gateway.idc.id
   type                = "ipsec.1"
   static_routes_only  = true
@@ -154,7 +158,7 @@ resource "aws_ec2_transit_gateway_route" "idc_cidr" {
   provider                       = aws.tokyo
   destination_cidr_block         = "30.0.0.0/16"
   transit_gateway_attachment_id  = aws_vpn_connection.tokyo_to_idc.transit_gateway_attachment_id
-  transit_gateway_route_table_id = data.aws_ec2_transit_gateway.main.association_default_route_table_id
+  transit_gateway_route_table_id = aws_ec2_transit_gateway.main.association_default_route_table_id
 }
 
 # ===== Elastic Beanstalk 설정 =====

@@ -37,6 +37,45 @@ resource "aws_s3_bucket_public_access_block" "this" {
     restrict_public_buckets = true
 }
 
+data "aws_caller_identity" "current" {}
+
+resource "aws_s3_bucket_policy" "terraform_state" {
+    bucket = aws_s3_bucket.terraform_state.id
+
+    policy = jsonencode({
+        Version = "2012-10-17"
+        Statement = [
+            {
+                Sid = "RootAccountPutObject"
+                Effect = "Allow"
+                Principal = {
+                    AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+                }
+                Action = [
+                    "s3:PutObject",
+                    "s3:PutObjectAcl"
+                ]
+                Resource = "${aws_s3_bucket.terraform_state.arn}/*"
+            },
+            {
+                Sid = "AllIAMUsersGetObject"
+                Effect = "Allow"
+                Principal = {
+                    AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+                }
+                Action = [
+                    "s3:GetObject",
+                    "s3:ListBucket"
+                ]
+                Resource = [
+                    "${aws_s3_bucket.terraform_state.arn}",
+                    "${aws_s3_bucket.terraform_state.arn}/*"
+                ]
+            }
+        ]
+    })
+}
+
 resource "aws_dynamodb_table" "terraform_locks" {
     name = var.table_name
     billing_mode = "PAY_PER_REQUEST"

@@ -40,7 +40,7 @@ output "vpn_connection_id" {
 
 output "transit_gateway_id" {
   description = "Transit Gateway ID"
-  value       = data.aws_ec2_transit_gateway.main.id
+  value       = aws_ec2_transit_gateway.main.id
 }
 
 output "tokyo_beanstalk_subnet_ids" {
