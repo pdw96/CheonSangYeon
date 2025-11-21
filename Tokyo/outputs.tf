@@ -1,11 +1,11 @@
 output "tokyo_vpc_id" {
   description = "Tokyo VPC ID"
-  value       = module.tokyo.vpc_id
+  value       = data.terraform_remote_state.global_vpc.outputs.tokyo_vpc_id
 }
 
 output "idc_vpc_id" {
   description = "IDC VPC ID"
-  value       = module.idc.vpc_id
+  value       = data.terraform_remote_state.global_vpc.outputs.tokyo_idc_vpc_id
 }
 
 output "idc_cgw_instance_id" {
@@ -40,12 +40,12 @@ output "vpn_connection_id" {
 
 output "transit_gateway_id" {
   description = "Transit Gateway ID"
-  value       = aws_ec2_transit_gateway.main.id
+  value       = data.aws_ec2_transit_gateway.main.id
 }
 
 output "tokyo_beanstalk_subnet_ids" {
   description = "Tokyo Elastic Beanstalk Subnet IDs"
-  value       = module.tokyo.beanstalk_subnet_ids
+  value       = data.terraform_remote_state.global_vpc.outputs.tokyo_private_beanstalk_subnet_ids
 }
 
 output "aws_managed_vpn_status" {
@@ -81,4 +81,3 @@ output "beanstalk_cname" {
   description = "Elastic Beanstalk CNAME"
   value       = aws_elastic_beanstalk_environment.tokyo_env.cname
 }
-

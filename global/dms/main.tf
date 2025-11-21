@@ -186,7 +186,7 @@ resource "aws_dms_replication_instance" "migration" {
   ]
 }
 
-# Source Endpoint (IDC MariaDB)
+# Source Endpoint (IDC MariaDB via CGW)
 resource "aws_dms_endpoint" "source_idc_mariadb" {
   provider      = aws.seoul
   endpoint_id   = "source-idc-mariadb"
@@ -195,9 +195,11 @@ resource "aws_dms_endpoint" "source_idc_mariadb" {
   server_name   = data.aws_instance.idc_db.private_ip
   port          = 3306
   database_name = "idcdb"
-  username      = "idcuser"
+  username      = "root"
   password      = "Password123!"
   ssl_mode      = "none"
+  
+  extra_connection_attributes = "initstmt=SET FOREIGN_KEY_CHECKS=0"
 
   tags = {
     Name = "source-idc-mariadb"

@@ -3,23 +3,28 @@ variable "environment" {
   type        = string
 }
 
-variable "vpc_cidr" {
-  description = "CIDR block for VPC"
+variable "vpc_id" {
+  description = "VPC ID (from global/vpc)"
   type        = string
 }
 
-variable "cgw_subnet_cidr" {
-  description = "CIDR block for CGW subnet"
+variable "cgw_subnet_id" {
+  description = "CGW subnet ID (from global/vpc)"
   type        = string
 }
 
-variable "db_subnet_cidr" {
-  description = "CIDR block for DB subnet"
+variable "db_subnet_id" {
+  description = "DB subnet ID (from global/vpc)"
   type        = string
 }
 
-variable "availability_zone" {
-  description = "Availability zone"
+variable "cgw_security_group_id" {
+  description = "CGW security group ID (from global/vpc)"
+  type        = string
+}
+
+variable "db_security_group_id" {
+  description = "DB security group ID (from global/vpc)"
   type        = string
 }
 
@@ -62,33 +67,5 @@ variable "db_config_script" {
   default     = ""
 }
 
-variable "cgw_ssh_cidrs" {
-  description = "CIDR blocks allowed to SSH into the CGW instance"
-  type        = list(string)
-}
 
-variable "cgw_icmp_cidrs" {
-  description = "CIDR blocks allowed to send ICMP to the CGW instance"
-  type        = list(string)
-}
-
-variable "vpn_peer_cidrs" {
-  description = "CIDR blocks (typically /32 addresses) for VPN peer CGW endpoints"
-  type        = list(string)
-}
-
-variable "db_ssh_cidrs" {
-  description = "CIDR blocks allowed to SSH into the DB instance"
-  type        = list(string)
-}
-
-variable "db_mysql_cidrs" {
-  description = "CIDR blocks allowed to access MySQL on the DB instance"
-  type        = list(string)
-}
-
-variable "db_icmp_cidrs" {
-  description = "CIDR blocks allowed to send ICMP to the DB instance"
-  type        = list(string)
-}
 

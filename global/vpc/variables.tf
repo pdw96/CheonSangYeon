@@ -42,6 +42,12 @@ variable "seoul_idc_subnet_cidr" {
   default     = "10.0.1.0/24"
 }
 
+variable "seoul_idc_db_subnet_cidr" {
+  description = "CIDR block for Seoul IDC private DB subnet"
+  type        = string
+  default     = "10.0.2.0/24"
+}
+
 variable "seoul_idc_availability_zone" {
   description = "Availability zone for Seoul IDC"
   type        = string
@@ -92,6 +98,12 @@ variable "tokyo_idc_subnet_cidr" {
   default     = "30.0.1.0/24"
 }
 
+variable "tokyo_idc_db_subnet_cidr" {
+  description = "CIDR block for Tokyo IDC private DB subnet"
+  type        = string
+  default     = "30.0.2.0/24"
+}
+
 variable "tokyo_idc_availability_zone" {
   description = "Availability zone for Tokyo IDC"
   type        = string
@@ -107,6 +119,19 @@ variable "seoul_transit_gateway_id" {
 
 variable "tokyo_transit_gateway_id" {
   description = "Transit Gateway ID for Tokyo region (optional)"
+  type        = string
+  default     = ""
+}
+
+# CGW Network Interface Variables
+variable "seoul_cgw_network_interface_id" {
+  description = "Network interface ID of Seoul IDC CGW instance"
+  type        = string
+  default     = ""
+}
+
+variable "tokyo_cgw_network_interface_id" {
+  description = "Network interface ID of Tokyo IDC CGW instance"
   type        = string
   default     = ""
 }

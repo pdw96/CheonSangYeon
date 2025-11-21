@@ -432,7 +432,7 @@ resource "aws_secretsmanager_secret" "rds_proxy_seoul" {
   provider                = aws.seoul
   name                    = "rds-proxy-aurora-seoul-credentials"
   description             = "Aurora database credentials for RDS Proxy"
-  recovery_window_in_days = 7
+  recovery_window_in_days = 0
 
   tags = {
     Name = "rds-proxy-aurora-seoul-credentials"
@@ -541,7 +541,7 @@ resource "aws_secretsmanager_secret" "rds_proxy_tokyo" {
   provider                = aws.tokyo
   name                    = "rds-proxy-aurora-tokyo-credentials"
   description             = "Aurora database credentials for RDS Proxy Tokyo"
-  recovery_window_in_days = 7
+  recovery_window_in_days = 0
 
   tags = {
     Name = "rds-proxy-aurora-tokyo-credentials"

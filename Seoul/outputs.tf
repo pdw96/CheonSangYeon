@@ -5,7 +5,7 @@ output "seoul_vpc_id" {
 
 output "idc_vpc_id" {
   description = "IDC VPC ID"
-  value       = module.idc.vpc_id
+  value       = data.terraform_remote_state.global_vpc.outputs.seoul_idc_vpc_id
 }
 
 output "idc_cgw_instance_id" {

@@ -75,9 +75,14 @@ output "seoul_idc_subnet_id" {
   value       = aws_subnet.seoul_idc_public.id
 }
 
+output "seoul_idc_db_subnet_id" {
+  description = "Seoul IDC private DB subnet ID"
+  value       = aws_subnet.seoul_idc_private_db.id
+}
+
 output "seoul_idc_route_table_id" {
   description = "Seoul IDC route table ID"
-  value       = aws_route_table.seoul_idc.id
+  value       = aws_route_table.seoul_idc_public.id
 }
 
 output "seoul_idc_cgw_security_group_id" {
@@ -172,9 +177,14 @@ output "tokyo_idc_subnet_id" {
   value       = aws_subnet.tokyo_idc_public.id
 }
 
+output "tokyo_idc_db_subnet_id" {
+  description = "Tokyo IDC private DB subnet ID"
+  value       = aws_subnet.tokyo_idc_private_db.id
+}
+
 output "tokyo_idc_route_table_id" {
   description = "Tokyo IDC route table ID"
-  value       = aws_route_table.tokyo_idc.id
+  value       = aws_route_table.tokyo_idc_public.id
 }
 
 output "tokyo_idc_cgw_security_group_id" {

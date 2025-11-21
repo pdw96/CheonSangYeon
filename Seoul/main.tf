@@ -45,16 +45,17 @@ module "idc" {
     aws = aws.seoul
   }
 
-  environment       = "idc"
-  vpc_cidr          = local.seoul_idc_cidr
-  cgw_subnet_cidr   = "10.0.1.0/24"
-  db_subnet_cidr    = "10.0.2.0/24"
-  availability_zone = "ap-northeast-2d"
-  ami_id            = var.seoul_ami_id
-  instance_type     = "t3.micro"
-  key_name          = var.seoul_key_name
-  eip_id            = aws_eip.idc_cgw.id
-  vpn_config_script = templatefile("${path.module}/scripts/vpn-setup.sh", {
+  environment            = "idc"
+  vpc_id                 = data.terraform_remote_state.global_vpc.outputs.seoul_idc_vpc_id
+  cgw_subnet_id          = data.terraform_remote_state.global_vpc.outputs.seoul_idc_subnet_id
+  db_subnet_id           = data.terraform_remote_state.global_vpc.outputs.seoul_idc_db_subnet_id
+  cgw_security_group_id  = data.terraform_remote_state.global_vpc.outputs.seoul_idc_cgw_security_group_id
+  db_security_group_id   = data.terraform_remote_state.global_vpc.outputs.seoul_idc_db_security_group_id
+  ami_id                 = var.seoul_ami_id
+  instance_type          = "t3.micro"
+  key_name               = var.seoul_key_name
+  eip_id                 = aws_eip.idc_cgw.id
+  vpn_config_script      = templatefile("${path.module}/scripts/vpn-setup.sh", {
     tunnel1_address = aws_vpn_connection.seoul_to_idc.tunnel1_address
     tunnel2_address = aws_vpn_connection.seoul_to_idc.tunnel2_address
     tunnel1_psk     = aws_vpn_connection.seoul_to_idc.tunnel1_preshared_key
@@ -65,16 +66,6 @@ module "idc" {
     tokyo_idc_cidr  = local.tokyo_idc_cidr
   })
   db_config_script = file("${path.module}/scripts/db-setup.sh")
-
-  cgw_ssh_cidrs  = [local.seoul_vpc_cidr, local.tokyo_vpc_cidr]
-  cgw_icmp_cidrs = [local.seoul_idc_cidr, local.tokyo_idc_cidr]
-  vpn_peer_cidrs = [
-    "${aws_vpn_connection.seoul_to_idc.tunnel1_address}/32",
-    "${aws_vpn_connection.seoul_to_idc.tunnel2_address}/32",
-  ]
-  db_ssh_cidrs   = [local.seoul_vpc_cidr, local.tokyo_vpc_cidr]
-  db_mysql_cidrs = [local.seoul_vpc_cidr, local.tokyo_vpc_cidr]
-  db_icmp_cidrs  = [local.seoul_idc_cidr, local.tokyo_idc_cidr]
 
   depends_on = [aws_vpn_connection.seoul_to_idc]
 }

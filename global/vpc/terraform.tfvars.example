@@ -1,0 +1,6 @@
+# CGW Network Interface IDs
+# Seoul IDC CGW의 네트워크 인터페이스 ID
+seoul_cgw_network_interface_id = "eni-012ce5ca163dba144"
+
+# Tokyo IDC CGW의 네트워크 인터페이스 ID
+tokyo_cgw_network_interface_id = "eni-0ee5f634352945b1b"

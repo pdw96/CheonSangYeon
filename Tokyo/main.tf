@@ -20,7 +20,6 @@ provider "aws" {
   region = "ap-northeast-1"
 }
 
-<<<<<<< HEAD
 # Import VPC from global VPC module
 data "terraform_remote_state" "global_vpc" {
   backend = "s3"
@@ -28,22 +27,14 @@ data "terraform_remote_state" "global_vpc" {
     bucket = "terraform-s3-cheonsangyeon"
     key    = "terraform/global-vpc/terraform.tfstate"
     region = "ap-northeast-2"
-=======
-locals {
-  tokyo_vpc_cidr = "40.0.0.0/16"
-  tokyo_idc_cidr = "30.0.0.0/16"
-  seoul_vpc_cidr = "20.0.0.0/16"
-  seoul_idc_cidr = "10.0.0.0/16"
+  }
 }
 
-# Tokyo Module
-module "tokyo" {
-  source = "./modules/tokyo"
-
-  providers = {
-    aws = aws.tokyo
->>>>>>> 0a53650c55c50f5f8f315c7eef4f600ba8e87759
-  }
+locals {
+  tokyo_idc_cidr = "30.0.0.0/16"
+  tokyo_vpc_cidr = data.terraform_remote_state.global_vpc.outputs.tokyo_vpc_cidr
+  seoul_vpc_cidr = data.terraform_remote_state.global_vpc.outputs.seoul_vpc_cidr
+  seoul_idc_cidr = data.terraform_remote_state.global_vpc.outputs.seoul_idc_vpc_cidr
 }
 
 # IDC Module (도쿄 리전에 배치, VPN으로만 연결)
@@ -54,65 +45,52 @@ module "idc" {
     aws = aws.tokyo
   }
 
-  environment         = "idc"
-  vpc_cidr            = local.tokyo_idc_cidr
-  cgw_subnet_cidr     = "30.0.1.0/24"
-  db_subnet_cidr      = "30.0.2.0/24"
-  availability_zone   = "ap-northeast-1d"
-  ami_id              = var.tokyo_ami_id
-  instance_type       = "t3.micro"
-  key_name            = var.tokyo_key_name
-  eip_id              = aws_eip.idc_cgw.id
-  vpn_config_script   = templatefile("${path.module}/scripts/vpn-setup.sh", {
+  environment            = "idc"
+  vpc_id                 = data.terraform_remote_state.global_vpc.outputs.tokyo_idc_vpc_id
+  cgw_subnet_id          = data.terraform_remote_state.global_vpc.outputs.tokyo_idc_subnet_id
+  db_subnet_id           = data.terraform_remote_state.global_vpc.outputs.tokyo_idc_db_subnet_id
+  cgw_security_group_id  = data.terraform_remote_state.global_vpc.outputs.tokyo_idc_cgw_security_group_id
+  db_security_group_id   = data.terraform_remote_state.global_vpc.outputs.tokyo_idc_db_security_group_id
+  ami_id                 = var.tokyo_ami_id
+  instance_type          = "t3.micro"
+  key_name               = var.tokyo_key_name
+  eip_id                 = aws_eip.idc_cgw.id
+  vpn_config_script      = templatefile("${path.module}/scripts/vpn-setup.sh", {
     tunnel1_address = aws_vpn_connection.tokyo_to_idc.tunnel1_address
     tunnel2_address = aws_vpn_connection.tokyo_to_idc.tunnel2_address
     tunnel1_psk     = aws_vpn_connection.tokyo_to_idc.tunnel1_preshared_key
     tunnel2_psk     = aws_vpn_connection.tokyo_to_idc.tunnel2_preshared_key
     local_cidr      = local.tokyo_idc_cidr
     remote_cidr     = local.tokyo_vpc_cidr
-    seoul_aws_cidr  = local.seoul_vpc_cidr
-    seoul_idc_cidr  = local.seoul_idc_cidr
+    tokyo_aws_cidr  = local.seoul_vpc_cidr
+    tokyo_idc_cidr  = local.seoul_idc_cidr
   })
   db_config_script = file("${path.module}/scripts/db-setup.sh")
-
-  cgw_ssh_cidrs  = [local.tokyo_vpc_cidr, local.seoul_vpc_cidr]
-  cgw_icmp_cidrs = [local.tokyo_idc_cidr, local.seoul_idc_cidr]
-  vpn_peer_cidrs = [
-    "${aws_vpn_connection.tokyo_to_idc.tunnel1_address}/32",
-    "${aws_vpn_connection.tokyo_to_idc.tunnel2_address}/32",
-  ]
-  db_ssh_cidrs   = [local.tokyo_vpc_cidr, local.seoul_vpc_cidr]
-  db_mysql_cidrs = [local.tokyo_vpc_cidr, local.seoul_vpc_cidr]
-  db_icmp_cidrs  = [local.tokyo_idc_cidr, local.seoul_idc_cidr]
 
   depends_on = [aws_vpn_connection.tokyo_to_idc]
 }
 
-# Transit Gateway (도쿄 리전)
-resource "aws_ec2_transit_gateway" "main" {
-  provider                        = aws.tokyo
-  description                     = "Transit Gateway for Tokyo region"
-  default_route_table_association = "enable"
-  default_route_table_propagation = "enable"
+# Transit Gateway (도쿄 리전) - 기존 TGW 사용
+data "aws_ec2_transit_gateway" "main" {
+  provider = aws.tokyo
+  id       = "tgw-07066acdcabff061f"
 
-  tags = {
-    Name = "tokyo-main-tgw"
+  filter {
+    name   = "state"
+    values = ["available"]
   }
 }
 
-# Transit Gateway Attachment - Tokyo VPC
-resource "aws_ec2_transit_gateway_vpc_attachment" "tokyo" {
-  provider           = aws.tokyo
-  subnet_ids         = [data.terraform_remote_state.global_vpc.outputs.tokyo_tgw_subnet_id]
-  transit_gateway_id = aws_ec2_transit_gateway.main.id
-  vpc_id             = data.terraform_remote_state.global_vpc.outputs.tokyo_vpc_id
+# Transit Gateway Attachment - Tokyo VPC (기존 Attachment 사용)
+data "aws_ec2_transit_gateway_vpc_attachment" "tokyo" {
+  provider = aws.tokyo
+  id       = "tgw-attach-0fa2283ea7bae52c0"
 
-  tags = {
-    Name = "tokyo-vpc-tgw-attachment"
+  filter {
+    name   = "state"
+    values = ["available"]
   }
 }
-
-# IDC는 Transit Gateway 사용하지 않음 (VPN으로만 연결)
 
 # ===== AWS Managed VPN 설정 =====
 
@@ -122,7 +100,7 @@ resource "aws_eip" "idc_cgw" {
   domain   = "vpc"
 
   tags = {
-    Name = "idc-cgw-eip"
+    Name = "tokyo-idc-cgw-eip"
   }
 }
 
@@ -141,7 +119,7 @@ resource "aws_customer_gateway" "idc" {
 # VPN Connection (Tokyo Transit Gateway ↔ IDC Customer Gateway)
 resource "aws_vpn_connection" "tokyo_to_idc" {
   provider            = aws.tokyo
-  transit_gateway_id  = aws_ec2_transit_gateway.main.id
+  transit_gateway_id  = data.aws_ec2_transit_gateway.main.id
   customer_gateway_id = aws_customer_gateway.idc.id
   type                = "ipsec.1"
   static_routes_only  = true
@@ -176,7 +154,7 @@ resource "aws_ec2_transit_gateway_route" "idc_cidr" {
   provider                       = aws.tokyo
   destination_cidr_block         = "30.0.0.0/16"
   transit_gateway_attachment_id  = aws_vpn_connection.tokyo_to_idc.transit_gateway_attachment_id
-  transit_gateway_route_table_id = aws_ec2_transit_gateway.main.association_default_route_table_id
+  transit_gateway_route_table_id = data.aws_ec2_transit_gateway.main.association_default_route_table_id
 }
 
 # ===== Elastic Beanstalk 설정 =====
@@ -262,49 +240,6 @@ resource "aws_iam_instance_profile" "beanstalk_ec2" {
   role     = aws_iam_role.beanstalk_ec2.name
 }
 
-# Security Group for Elastic Beanstalk Instances
-resource "aws_security_group" "beanstalk" {
-  provider    = aws.tokyo
-  name        = "tokyo-beanstalk-sg"
-  description = "Security group for Elastic Beanstalk instances"
-  vpc_id      = data.terraform_remote_state.global_vpc.outputs.tokyo_vpc_id
-
-  ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "HTTP from anywhere"
-  }
-
-  ingress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "HTTPS from anywhere"
-  }
-
-  ingress {
-    from_port   = -1
-    to_port     = -1
-    protocol    = "icmp"
-    cidr_blocks = ["10.0.0.0/16", "20.0.0.0/16", "30.0.0.0/16", "40.0.0.0/16"]
-    description = "ICMP from VPCs and IDC"
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = "tokyo-beanstalk-sg"
-  }
-}
-
 # Elastic Beanstalk Environment
 resource "aws_elastic_beanstalk_environment" "tokyo_env" {
   provider            = aws.tokyo
@@ -323,6 +258,12 @@ resource "aws_elastic_beanstalk_environment" "tokyo_env" {
     namespace = "aws:ec2:vpc"
     name      = "Subnets"
     value     = join(",", data.terraform_remote_state.global_vpc.outputs.tokyo_private_beanstalk_subnet_ids)
+  }
+
+  setting {
+    namespace = "aws:ec2:vpc"
+    name      = "ELBSubnets"
+    value     = join(",", data.terraform_remote_state.global_vpc.outputs.tokyo_public_nat_subnet_ids)
   }
 
   setting {
@@ -352,7 +293,7 @@ resource "aws_elastic_beanstalk_environment" "tokyo_env" {
   setting {
     namespace = "aws:autoscaling:launchconfiguration"
     name      = "SecurityGroups"
-    value     = aws_security_group.beanstalk.id
+    value     = data.terraform_remote_state.global_vpc.outputs.tokyo_beanstalk_security_group_id
   }
 
   setting {
@@ -388,13 +329,13 @@ resource "aws_elastic_beanstalk_environment" "tokyo_env" {
   setting {
     namespace = "aws:elbv2:loadbalancer"
     name      = "SecurityGroups"
-    value     = aws_security_group.beanstalk.id
+    value     = data.terraform_remote_state.global_vpc.outputs.tokyo_beanstalk_security_group_id
   }
 
   setting {
     namespace = "aws:elbv2:loadbalancer"
     name      = "ManagedSecurityGroup"
-    value     = aws_security_group.beanstalk.id
+    value     = data.terraform_remote_state.global_vpc.outputs.tokyo_beanstalk_security_group_id
   }
 
   setting {
