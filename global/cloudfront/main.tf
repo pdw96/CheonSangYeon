@@ -49,16 +49,6 @@ data "terraform_remote_state" "tokyo" {
   }
 }
 
-# Import Route 53 state for ACM certificate
-data "terraform_remote_state" "route53" {
-  backend = "s3"
-  config = {
-    bucket = "terraform-s3-cheonsangyeon"
-    key    = "terraform/global-route53/terraform.tfstate"
-    region = "ap-northeast-2"
-  }
-}
-
 # ===== Origin Access Control for CloudFront =====
 resource "aws_cloudfront_origin_access_control" "main" {
   name                              = "cheonsangyeon-oac"
@@ -166,9 +156,6 @@ resource "aws_cloudfront_distribution" "main" {
   price_class         = "PriceClass_All"  # Pro: 전 세계 모든 엣지 로케이션 사용
   http_version        = "http2and3"       # HTTP/3 (QUIC) 지원
   default_root_object = "index.html"
-  
-  # Custom domain aliases
-  aliases = ["pdwo610.shop", "www.pdwo610.shop"]
 
   # Origin 1: Seoul Beanstalk (Primary)
   origin {
@@ -298,9 +285,11 @@ resource "aws_cloudfront_distribution" "main" {
 
   # SSL/TLS Certificate (HTTPS)
   viewer_certificate {
-    acm_certificate_arn      = data.terraform_remote_state.route53.outputs.acm_certificate_arn
-    ssl_support_method       = "sni-only"
-    minimum_protocol_version = "TLSv1.2_2021"
+    cloudfront_default_certificate = true  # 기본 CloudFront 인증서 사용
+    # 커스텀 도메인 사용 시:
+    # acm_certificate_arn      = aws_acm_certificate.main.arn
+    # ssl_support_method       = "sni-only"
+    # minimum_protocol_version = "TLSv1.2_2021"
   }
 
   # Logging Configuration (선택 사항)
