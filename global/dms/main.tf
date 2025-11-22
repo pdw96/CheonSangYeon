@@ -195,7 +195,7 @@ resource "aws_dms_endpoint" "source_idc_mariadb" {
   server_name   = data.aws_instance.idc_db.private_ip
   port          = 3306
   database_name = "idcdb"
-  username      = "root"
+  username      = "idcuser"
   password      = "Password123!"
   ssl_mode      = "none"
   

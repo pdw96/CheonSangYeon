@@ -48,7 +48,7 @@ module "idc" {
   environment            = "idc"
   vpc_id                 = data.terraform_remote_state.global_vpc.outputs.seoul_idc_vpc_id
   cgw_subnet_id          = data.terraform_remote_state.global_vpc.outputs.seoul_idc_subnet_id
-  db_subnet_id           = data.terraform_remote_state.global_vpc.outputs.seoul_idc_db_subnet_id
+  db_subnet_id           = data.terraform_remote_state.global_vpc.outputs.seoul_idc_subnet_id  # CGW와 같은 서브넷에 배치
   cgw_security_group_id  = data.terraform_remote_state.global_vpc.outputs.seoul_idc_cgw_security_group_id
   db_security_group_id   = data.terraform_remote_state.global_vpc.outputs.seoul_idc_db_security_group_id
   ami_id                 = var.seoul_ami_id
@@ -68,6 +68,62 @@ module "idc" {
   db_config_script = file("${path.module}/scripts/db-setup.sh")
 
   depends_on = [aws_vpn_connection.seoul_to_idc]
+}
+
+# IDC Public 서브넷 라우팅 테이블에 AWS VPC CIDR를 CGW ENI로 향하도록 설정
+resource "aws_route" "idc_to_seoul_vpc" {
+  provider               = aws.seoul
+  route_table_id         = data.terraform_remote_state.global_vpc.outputs.seoul_idc_route_table_id
+  destination_cidr_block = "20.0.0.0/16"
+  network_interface_id   = module.idc.cgw_network_interface_id
+
+  depends_on = [module.idc]
+}
+
+resource "aws_route" "idc_to_tokyo_vpc" {
+  provider               = aws.seoul
+  route_table_id         = data.terraform_remote_state.global_vpc.outputs.seoul_idc_route_table_id
+  destination_cidr_block = "40.0.0.0/16"
+  network_interface_id   = module.idc.cgw_network_interface_id
+
+  depends_on = [module.idc]
+}
+
+resource "aws_route" "idc_to_tokyo_idc" {
+  provider               = aws.seoul
+  route_table_id         = data.terraform_remote_state.global_vpc.outputs.seoul_idc_route_table_id
+  destination_cidr_block = "30.0.0.0/16"
+  network_interface_id   = module.idc.cgw_network_interface_id
+
+  depends_on = [module.idc]
+}
+
+# AWS Private 서브넷 라우팅 테이블에 TGW 경로 추가
+resource "aws_route" "seoul_private_to_idc" {
+  provider               = aws.seoul
+  route_table_id         = data.terraform_remote_state.global_vpc.outputs.seoul_private_route_table_id
+  destination_cidr_block = "10.0.0.0/16"  # Seoul IDC VPC
+  transit_gateway_id     = aws_ec2_transit_gateway.main.id
+
+  depends_on = [aws_ec2_transit_gateway_vpc_attachment.seoul]
+}
+
+resource "aws_route" "seoul_private_to_tokyo_vpc" {
+  provider               = aws.seoul
+  route_table_id         = data.terraform_remote_state.global_vpc.outputs.seoul_private_route_table_id
+  destination_cidr_block = "40.0.0.0/16"  # Tokyo VPC
+  transit_gateway_id     = aws_ec2_transit_gateway.main.id
+
+  depends_on = [aws_ec2_transit_gateway_vpc_attachment.seoul]
+}
+
+resource "aws_route" "seoul_private_to_tokyo_idc" {
+  provider               = aws.seoul
+  route_table_id         = data.terraform_remote_state.global_vpc.outputs.seoul_private_route_table_id
+  destination_cidr_block = "30.0.0.0/16"  # Tokyo IDC VPC
+  transit_gateway_id     = aws_ec2_transit_gateway.main.id
+
+  depends_on = [aws_ec2_transit_gateway_vpc_attachment.seoul]
 }
 
 # Transit Gateway (서울 리전)

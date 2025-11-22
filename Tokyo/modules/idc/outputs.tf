@@ -24,3 +24,8 @@ output "db_instance_private_ip" {
   description = "DB instance private IP"
   value       = aws_instance.db.private_ip
 }
+
+output "db_instance_public_ip" {
+  description = "DB instance public IP (임시)"
+  value       = aws_instance.db.public_ip
+}

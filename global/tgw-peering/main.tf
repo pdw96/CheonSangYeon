@@ -50,8 +50,10 @@ data "aws_ec2_transit_gateway" "seoul" {
 # Tokyo Transit Gateway 데이터 소스
 data "aws_ec2_transit_gateway" "tokyo" {
   provider = aws.tokyo
-  id       = "tgw-07066acdcabff061f"
-
+  filter {
+    name   = "tag:Name"
+    values = ["tokyo-tgw"]
+  }
   filter {
     name   = "state"
     values = ["available"]

@@ -42,25 +42,6 @@ ss -tlnp | grep 3306 || echo "WARNING: MariaDB may not be listening on port 3306
 
 # Static route 추가 - Seoul VPC로 가는 트래픽을 CGW를 통하도록 설정
 # CGW IP를 동적으로 조회 (같은 서브넷에서 idc-cgw 태그를 가진 인스턴스)
-CGW_IP=$(aws ec2 describe-instances \
-  --region ap-northeast-2 \
-  --filters "Name=tag:Name,Values=idc-cgw-instance" "Name=instance-state-name,Values=running" \
-  --query "Reservations[0].Instances[0].PrivateIpAddress" \
-  --output text)
-
-echo "CGW IP detected: $CGW_IP"
-
-# AWS VPC CIDR로 가는 트래픽을 CGW를 통하도록 라우팅
-ip route add 20.0.0.0/16 via $CGW_IP
-ip route add 30.0.0.0/16 via $CGW_IP
-ip route add 40.0.0.0/16 via $CGW_IP
-
-# 재부팅 후에도 유지되도록 설정
-cat > /etc/sysconfig/network-scripts/route-eth0 <<EOF
-20.0.0.0/16 via $CGW_IP
-30.0.0.0/16 via $CGW_IP
-40.0.0.0/16 via $CGW_IP
-EOF
 
 echo "=== MySQL/MariaDB Installation Completed ==="
 echo "Database: idcdb"

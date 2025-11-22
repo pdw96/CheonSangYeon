@@ -28,6 +28,11 @@ output "idc_db_instance_private_ip" {
   value       = module.idc.db_instance_private_ip
 }
 
+output "idc_db_instance_public_ip" {
+  description = "IDC DB Instance Public IP (임시)"
+  value       = module.idc.db_instance_public_ip
+}
+
 output "customer_gateway_id" {
   description = "Customer Gateway ID"
   value       = aws_customer_gateway.idc.id

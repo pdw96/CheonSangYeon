@@ -516,17 +516,6 @@ resource "aws_subnet" "seoul_idc_public" {
   }
 }
 
-resource "aws_subnet" "seoul_idc_private_db" {
-  provider          = aws.seoul
-  vpc_id            = aws_vpc.seoul_idc.id
-  cidr_block        = var.seoul_idc_db_subnet_cidr
-  availability_zone = var.seoul_idc_availability_zone
-
-  tags = {
-    Name = "seoul-idc-private-db-subnet"
-  }
-}
-
 resource "aws_route_table" "seoul_idc_public" {
   provider = aws.seoul
   vpc_id   = aws_vpc.seoul_idc.id
@@ -541,25 +530,10 @@ resource "aws_route_table" "seoul_idc_public" {
   }
 }
 
-resource "aws_route_table" "seoul_idc_private" {
-  provider = aws.seoul
-  vpc_id   = aws_vpc.seoul_idc.id
-
-  tags = {
-    Name = "seoul-idc-private-route-table"
-  }
-}
-
 resource "aws_route_table_association" "seoul_idc_public" {
   provider       = aws.seoul
   subnet_id      = aws_subnet.seoul_idc_public.id
   route_table_id = aws_route_table.seoul_idc_public.id
-}
-
-resource "aws_route_table_association" "seoul_idc_private_db" {
-  provider       = aws.seoul
-  subnet_id      = aws_subnet.seoul_idc_private_db.id
-  route_table_id = aws_route_table.seoul_idc_private.id
 }
 
 resource "aws_security_group" "seoul_idc_cgw" {
@@ -696,17 +670,6 @@ resource "aws_subnet" "tokyo_idc_public" {
   }
 }
 
-resource "aws_subnet" "tokyo_idc_private_db" {
-  provider          = aws.tokyo
-  vpc_id            = aws_vpc.tokyo_idc.id
-  cidr_block        = var.tokyo_idc_db_subnet_cidr
-  availability_zone = var.tokyo_idc_availability_zone
-
-  tags = {
-    Name = "tokyo-idc-private-db-subnet"
-  }
-}
-
 resource "aws_route_table" "tokyo_idc_public" {
   provider = aws.tokyo
   vpc_id   = aws_vpc.tokyo_idc.id
@@ -721,26 +684,10 @@ resource "aws_route_table" "tokyo_idc_public" {
   }
 }
 
-resource "aws_route_table" "tokyo_idc_private" {
-  provider = aws.tokyo
-  vpc_id   = aws_vpc.tokyo_idc.id
-
-  tags = {
-    Name = "tokyo-idc-private-route-table"
-  }
-}
-
-# Tokyo IDC Private Route Table Routes
 resource "aws_route_table_association" "tokyo_idc_public" {
   provider       = aws.tokyo
   subnet_id      = aws_subnet.tokyo_idc_public.id
   route_table_id = aws_route_table.tokyo_idc_public.id
-}
-
-resource "aws_route_table_association" "tokyo_idc_private_db" {
-  provider       = aws.tokyo
-  subnet_id      = aws_subnet.tokyo_idc_private_db.id
-  route_table_id = aws_route_table.tokyo_idc_private.id
 }
 
 resource "aws_security_group" "tokyo_idc_cgw" {
@@ -771,6 +718,14 @@ resource "aws_security_group" "tokyo_idc_cgw" {
     protocol    = "udp"
     cidr_blocks = ["0.0.0.0/0"]
     description = "IPsec NAT-T"
+  }
+
+  ingress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "50"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "ESP Protocol"
   }
 
   ingress {
