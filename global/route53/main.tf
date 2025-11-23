@@ -56,11 +56,11 @@ data "terraform_remote_state" "tokyo" {
 
 # ===== Route 53 Hosted Zone =====
 resource "aws_route53_zone" "main" {
-  name    = "pdwo610.shop"
+  name    = var.domain_name
   comment = "CheonSangYeon Public Domain"
 
   tags = {
-    Name        = "pdwo610.shop"
+    Name        = var.domain_name
     Environment = "production"
     Terraform   = "true"
   }
@@ -69,11 +69,11 @@ resource "aws_route53_zone" "main" {
 # ===== ACM Certificate for CloudFront (us-east-1) =====
 resource "aws_acm_certificate" "cloudfront" {
   provider          = aws.us_east_1
-  domain_name       = "pdwo610.shop"
+  domain_name       = var.domain_name
   validation_method = "DNS"
 
   subject_alternative_names = [
-    "*.pdwo610.shop"
+    "*.${var.domain_name}"
   ]
 
   lifecycle {
@@ -81,7 +81,7 @@ resource "aws_acm_certificate" "cloudfront" {
   }
 
   tags = {
-    Name        = "pdwo610.shop-cloudfront"
+    Name        = "${var.domain_name}-cloudfront"
     Environment = "production"
     Terraform   = "true"
   }
@@ -125,7 +125,7 @@ resource "aws_acm_certificate_validation" "cloudfront" {
 # ===== CloudFront Alias Record =====
 resource "aws_route53_record" "cloudfront_root" {
   zone_id = aws_route53_zone.main.zone_id
-  name    = "pdwo610.shop"
+  name    = var.domain_name
   type    = "A"
 
   alias {
@@ -137,7 +137,7 @@ resource "aws_route53_record" "cloudfront_root" {
 
 resource "aws_route53_record" "cloudfront_root_ipv6" {
   zone_id = aws_route53_zone.main.zone_id
-  name    = "pdwo610.shop"
+  name    = var.domain_name
   type    = "AAAA"
 
   alias {
@@ -150,7 +150,7 @@ resource "aws_route53_record" "cloudfront_root_ipv6" {
 # WWW subdomain
 resource "aws_route53_record" "cloudfront_www" {
   zone_id = aws_route53_zone.main.zone_id
-  name    = "www.pdwo610.shop"
+  name    = "www.${var.domain_name}"
   type    = "A"
 
   alias {
@@ -162,7 +162,7 @@ resource "aws_route53_record" "cloudfront_www" {
 
 resource "aws_route53_record" "cloudfront_www_ipv6" {
   zone_id = aws_route53_zone.main.zone_id
-  name    = "www.pdwo610.shop"
+  name    = "www.${var.domain_name}"
   type    = "AAAA"
 
   alias {
@@ -176,18 +176,18 @@ resource "aws_route53_record" "cloudfront_www_ipv6" {
 # Seoul region direct access
 resource "aws_route53_record" "seoul" {
   zone_id = aws_route53_zone.main.zone_id
-  name    = "seoul.pdwo610.shop"
+  name    = "seoul.${var.domain_name}"
   type    = "CNAME"
-  ttl     = 300
+  ttl     = var.subdomain_ttl
   records = [data.terraform_remote_state.seoul.outputs.beanstalk_cname]
 }
 
 # Tokyo region direct access
 resource "aws_route53_record" "tokyo" {
   zone_id = aws_route53_zone.main.zone_id
-  name    = "tokyo.pdwo610.shop"
+  name    = "tokyo.${var.domain_name}"
   type    = "CNAME"
-  ttl     = 300
+  ttl     = var.subdomain_ttl
   records = [data.terraform_remote_state.tokyo.outputs.beanstalk_cname]
 }
 
@@ -232,7 +232,7 @@ resource "aws_route53_health_check" "tokyo_beanstalk" {
 # ===== TXT Records (SPF, DKIM - Optional) =====
 resource "aws_route53_record" "txt_spf" {
   zone_id = aws_route53_zone.main.zone_id
-  name    = "pdwo610.shop"
+  name    = var.domain_name
   type    = "TXT"
   ttl     = 3600
   records = [
@@ -243,7 +243,7 @@ resource "aws_route53_record" "txt_spf" {
 # ===== CAA Records (Certificate Authority Authorization) =====
 resource "aws_route53_record" "caa" {
   zone_id = aws_route53_zone.main.zone_id
-  name    = "pdwo610.shop"
+  name    = var.domain_name
   type    = "CAA"
   ttl     = 3600
   records = [

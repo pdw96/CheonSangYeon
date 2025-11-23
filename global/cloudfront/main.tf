@@ -49,6 +49,18 @@ data "terraform_remote_state" "tokyo" {
   }
 }
 
+# Import Route 53 state (optional, only if enable_custom_domain = true)
+data "terraform_remote_state" "route53" {
+  count = var.enable_custom_domain ? 1 : 0
+  
+  backend = "s3"
+  config = {
+    bucket = "terraform-s3-cheonsangyeon"
+    key    = "terraform/global-route53/terraform.tfstate"
+    region = "ap-northeast-2"
+  }
+}
+
 # ===== Origin Access Control for CloudFront =====
 resource "aws_cloudfront_origin_access_control" "main" {
   name                              = "cheonsangyeon-oac"
@@ -153,9 +165,12 @@ resource "aws_cloudfront_distribution" "main" {
   enabled             = true
   is_ipv6_enabled     = true
   comment             = "CheonSangYeon Multi-Region Distribution"
-  price_class         = "PriceClass_All"  # Pro: 전 세계 모든 엣지 로케이션 사용
+  price_class         = var.price_class
   http_version        = "http2and3"       # HTTP/3 (QUIC) 지원
   default_root_object = "index.html"
+
+  # Custom domain aliases (optional)
+  aliases = var.enable_custom_domain ? [var.domain_name, "www.${var.domain_name}"] : []
 
   # Origin 1: Seoul Beanstalk (Primary)
   origin {
@@ -278,18 +293,17 @@ resource "aws_cloudfront_distribution" "main" {
   # Geographic Restrictions (필요 시 설정)
   restrictions {
     geo_restriction {
-      restriction_type = "none"
-      # locations        = ["KR", "JP"]  # 한국, 일본만 허용하려면 whitelist로 설정
+      restriction_type = var.geo_restriction_type
+      locations        = var.geo_restriction_locations
     }
   }
 
   # SSL/TLS Certificate (HTTPS)
   viewer_certificate {
-    cloudfront_default_certificate = true  # 기본 CloudFront 인증서 사용
-    # 커스텀 도메인 사용 시:
-    # acm_certificate_arn      = aws_acm_certificate.main.arn
-    # ssl_support_method       = "sni-only"
-    # minimum_protocol_version = "TLSv1.2_2021"
+    cloudfront_default_certificate = var.enable_custom_domain ? false : true
+    acm_certificate_arn            = var.enable_custom_domain ? data.terraform_remote_state.route53[0].outputs.acm_certificate_arn : null
+    ssl_support_method             = var.enable_custom_domain ? "sni-only" : null
+    minimum_protocol_version       = var.enable_custom_domain ? "TLSv1.2_2021" : "TLSv1"
   }
 
   # Logging Configuration (선택 사항)

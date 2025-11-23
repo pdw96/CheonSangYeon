@@ -1,7 +1,36 @@
-# Route 53 Configuration for cloudupcon.com
+# Route 53 DNS 모듈
 
 ## 개요
-cloudupcon.com 도메인을 Route 53에 설정하고 CloudFront 및 Beanstalk 환경과 연결합니다.
+
+이 모듈은 Route 53 Hosted Zone, ACM 인증서, DNS 레코드를 관리합니다.
+
+## 🔧 도메인 변경 방법
+
+### 방법 1: variables.tf 수정 (권장)
+
+`variables.tf`에서 도메인만 변경하면 됩니다:
+
+```terraform
+variable "domain_name" {
+  description = "Primary domain name"
+  type        = string
+  default     = "your-domain.com"  # ← 여기만 변경!
+}
+```
+
+### 방법 2: terraform.tfvars 사용
+
+프로젝트 루트에 `terraform.tfvars` 파일 생성:
+
+```hcl
+domain_name = "your-domain.com"
+```
+
+### 방법 3: 명령줄에서 변수 전달
+
+```bash
+terraform apply -var="domain_name=your-domain.com"
+```
 
 ## 배포 방법
 
@@ -48,52 +77,58 @@ terraform output acm_certificate_status
 # 출력: ISSUED (검증 완료)
 ```
 
-### 4. CloudFront에 커스텀 도메인 적용
-Route 53 설정 완료 후 CloudFront를 업데이트해야 합니다.
+## 생성되는 리소스
+
+### 도메인: `{domain_name}` (변수로 관리)
+
+- **Hosted Zone**: `{domain_name}`
+- **ACM Certificate**: `{domain_name}`, `*.{domain_name}`
+- **DNS Records**:
+  - `{domain_name}` (A/AAAA) → CloudFront
+  - `www.{domain_name}` (A/AAAA) → CloudFront
+  - `seoul.{domain_name}` (CNAME) → Seoul Beanstalk
+  - `tokyo.{domain_name}` (CNAME) → Tokyo Beanstalk
+- **Health Checks**: Seoul, Tokyo Beanstalk
+
+## 출력 값
 
 ```bash
-cd ../cloudfront
+terraform output
 ```
 
-`main.tf`의 `viewer_certificate` 블록을 다음과 같이 수정:
-```hcl
-viewer_certificate {
-  acm_certificate_arn      = data.terraform_remote_state.route53.outputs.acm_certificate_arn
-  ssl_support_method       = "sni-only"
-  minimum_protocol_version = "TLSv1.2_2021"
-}
-```
-
-그리고 `aliases` 추가:
-```hcl
-resource "aws_cloudfront_distribution" "main" {
-  # ... 기존 설정 ...
-  
-  aliases = ["cloudupcon.com", "www.cloudupcon.com"]
-  
-  # ... 나머지 설정 ...
-}
-```
+주요 출력:
+- `route53_zone_id`: Hosted Zone ID
+- `route53_name_servers`: NS 레코드 (도메인 등록 기관에 설정 필요)
+- `domain_name`: 현재 도메인명
+- `acm_certificate_arn`: ACM 인증서 ARN
+- `cloudfront_url`: https://{domain_name}
+- `www_url`: https://www.{domain_name}
+- `seoul_url`: https://seoul.{domain_name}
+- `tokyo_url`: https://tokyo.{domain_name}
 
 ## DNS 레코드 구조
 
+모든 레코드는 `domain_name` 변수를 사용하여 자동 생성됩니다.
+
 | 레코드 | 타입 | 값 | 목적 |
 |--------|------|-----|------|
-| cloudupcon.com | A (Alias) | CloudFront | 메인 도메인 |
-| cloudupcon.com | AAAA (Alias) | CloudFront | 메인 도메인 (IPv6) |
-| www.cloudupcon.com | A (Alias) | CloudFront | WWW 서브도메인 |
-| www.cloudupcon.com | AAAA (Alias) | CloudFront | WWW 서브도메인 (IPv6) |
-| seoul.cloudupcon.com | CNAME | Seoul Beanstalk | Seoul 리전 직접 접속 |
-| tokyo.cloudupcon.com | CNAME | Tokyo Beanstalk | Tokyo 리전 직접 접속 |
-| cloudupcon.com | TXT | SPF 레코드 | 이메일 스푸핑 방지 |
-| cloudupcon.com | CAA | amazon.com | 인증서 발급 기관 제한 |
+| {domain_name} | A (Alias) | CloudFront | 메인 도메인 |
+| {domain_name} | AAAA (Alias) | CloudFront | 메인 도메인 (IPv6) |
+| www.{domain_name} | A (Alias) | CloudFront | WWW 서브도메인 |
+| www.{domain_name} | AAAA (Alias) | CloudFront | WWW 서브도메인 (IPv6) |
+| seoul.{domain_name} | CNAME | Seoul Beanstalk | Seoul 리전 직접 접속 |
+| tokyo.{domain_name} | CNAME | Tokyo Beanstalk | Tokyo 리전 직접 접속 |
+| {domain_name} | TXT | SPF 레코드 | 이메일 스푸핑 방지 |
+| {domain_name} | CAA | amazon.com | 인증서 발급 기관 제한 |
 
 ## 접속 URL
 
-- **메인 사이트**: https://cloudupcon.com
-- **WWW**: https://www.cloudupcon.com
-- **Seoul 직접**: https://seoul.cloudupcon.com
-- **Tokyo 직접**: https://tokyo.cloudupcon.com
+모든 URL은 변수로 관리됩니다:
+
+- **메인 사이트**: https://{domain_name}
+- **WWW**: https://www.{domain_name}
+- **Seoul 직접**: https://seoul.{domain_name}
+- **Tokyo 직접**: https://tokyo.{domain_name}
 
 ## Health Checks
 
@@ -109,35 +144,39 @@ Route 53 Health Check가 Seoul과 Tokyo Beanstalk 환경을 30초마다 모니�
 
 ### DNS 전파 확인
 ```bash
-# Name Server 확인
-dig NS cloudupcon.com
+# Name Server 확인 (도메인 변수 사용)
+DOMAIN=$(terraform output -raw domain_name)
+dig NS $DOMAIN
 
 # A 레코드 확인
-dig A cloudupcon.com
+dig A $DOMAIN
 
 # CNAME 레코드 확인
-dig CNAME www.cloudupcon.com
+dig CNAME www.$DOMAIN
 ```
 
 ### 인증서 확인
 ```bash
-# SSL 인증서 확인
-openssl s_client -connect cloudupcon.com:443 -servername cloudupcon.com
+# SSL 인증서 확인 (도메인 변수 사용)
+DOMAIN=$(terraform output -raw domain_name)
+openssl s_client -connect $DOMAIN:443 -servername $DOMAIN
 ```
 
 ### 웹사이트 접속 테스트
 ```bash
+DOMAIN=$(terraform output -raw domain_name)
+
 # 메인 도메인
-curl -I https://cloudupcon.com
+curl -I https://$DOMAIN
 
 # WWW
-curl -I https://www.cloudupcon.com
+curl -I https://www.$DOMAIN
 
 # Seoul
-curl -I https://seoul.cloudupcon.com
+curl -I https://seoul.$DOMAIN
 
 # Tokyo
-curl -I https://tokyo.cloudupcon.com
+curl -I https://tokyo.$DOMAIN
 ```
 
 ## 비용

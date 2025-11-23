@@ -1,7 +1,71 @@
-# CloudFront Distribution for CheonSangYeon
+# CloudFront CDN 모듈
 
 ## 개요
-Seoul과 Tokyo 리전의 Elastic Beanstalk 환경을 CloudFront로 연결하여 글로벌 콘텐츠 배포 및 고가용성을 제공합니다.
+
+Seoul과 Tokyo Beanstalk을 Origin으로 사용하는 CloudFront Distribution을 관리합니다.
+
+## 🔧 커스텀 도메인 사용 방법
+
+### 1. 기본 배포 (CloudFront 도메인만 사용)
+
+```bash
+cd global/cloudfront
+terraform init
+terraform apply
+```
+
+이 경우 `*.cloudfront.net` 도메인만 사용됩니다.
+
+### 2. 커스텀 도메인 활성화
+
+#### Step 1: Route 53 먼저 배포
+
+```bash
+cd global/route53
+# variables.tf에서 domain_name 변경
+terraform apply
+```
+
+#### Step 2: CloudFront 변수 설정
+
+**방법 A: variables.tf 수정 (권장)**
+
+```terraform
+variable "domain_name" {
+  description = "Primary domain name"
+  type        = string
+  default     = "your-domain.com"  # ← Route 53과 동일하게 설정
+}
+
+variable "enable_custom_domain" {
+  description = "Enable custom domain configuration"
+  type        = bool
+  default     = true  # ← true로 변경
+}
+```
+
+**방법 B: terraform.tfvars 사용**
+
+```hcl
+domain_name          = "your-domain.com"
+enable_custom_domain = true
+```
+
+#### Step 3: CloudFront 배포
+
+```bash
+terraform apply
+```
+
+## 주요 변수
+
+| 변수 | 기본값 | 설명 |
+|------|--------|------|
+| `domain_name` | `pdwo610.shop` | 커스텀 도메인명 (Route 53과 일치해야 함) |
+| `enable_custom_domain` | `false` | 커스텀 도메인 활성화 여부 |
+| `price_class` | `PriceClass_All` | CloudFront 가격 등급 |
+| `geo_restriction_type` | `none` | 지역 제한 타입 |
+| `enable_waf` | `false` | WAF 활성화 여부 |
 
 ## 주요 기능
 

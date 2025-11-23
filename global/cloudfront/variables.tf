@@ -1,3 +1,15 @@
+variable "domain_name" {
+  description = "Primary domain name (e.g., example.com)"
+  type        = string
+  default     = "pdwo610.shop"
+}
+
+variable "enable_custom_domain" {
+  description = "Enable custom domain configuration (requires Route 53 module deployed)"
+  type        = bool
+  default     = false
+}
+
 variable "enable_waf" {
   description = "Enable AWS WAF for CloudFront"
   type        = bool
@@ -8,18 +20,6 @@ variable "enable_logging" {
   description = "Enable CloudFront access logging"
   type        = bool
   default     = false
-}
-
-variable "custom_domain" {
-  description = "Custom domain name for CloudFront (optional)"
-  type        = string
-  default     = ""
-}
-
-variable "acm_certificate_arn" {
-  description = "ACM Certificate ARN for custom domain (must be in us-east-1)"
-  type        = string
-  default     = ""
 }
 
 variable "geo_restriction_type" {

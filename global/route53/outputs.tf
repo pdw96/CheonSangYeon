@@ -10,7 +10,7 @@ output "route53_name_servers" {
 
 output "domain_name" {
   description = "The domain name"
-  value       = "pdwo610.shop"
+  value       = var.domain_name
 }
 
 output "acm_certificate_arn" {
@@ -25,37 +25,37 @@ output "acm_certificate_status" {
 
 output "cloudfront_url" {
   description = "CloudFront URL"
-  value       = "https://pdwo610.shop"
+  value       = "https://${var.domain_name}"
 }
 
 output "www_url" {
   description = "WWW URL"
-  value       = "https://www.pdwo610.shop"
+  value       = "https://www.${var.domain_name}"
 }
 
 output "seoul_url" {
   description = "Seoul region direct URL"
-  value       = "https://seoul.pdwo610.shop"
+  value       = "https://seoul.${var.domain_name}"
 }
 
 output "tokyo_url" {
   description = "Tokyo region direct URL"
-  value       = "https://tokyo.pdwo610.shop"
+  value       = "https://tokyo.${var.domain_name}"
 }
 
 output "dns_records" {
   description = "Summary of DNS Records"
   value = {
     root_domain = {
-      A    = "pdwo610.shop → CloudFront"
-      AAAA = "pdwo610.shop → CloudFront (IPv6)"
+      A    = "${var.domain_name} → CloudFront"
+      AAAA = "${var.domain_name} → CloudFront (IPv6)"
     }
     www = {
-      A    = "www.pdwo610.shop → CloudFront"
-      AAAA = "www.pdwo610.shop → CloudFront (IPv6)"
+      A    = "www.${var.domain_name} → CloudFront"
+      AAAA = "www.${var.domain_name} → CloudFront (IPv6)"
     }
-    seoul = "seoul.pdwo610.shop → Seoul Beanstalk"
-    tokyo = "tokyo.pdwo610.shop → Tokyo Beanstalk"
+    seoul = "seoul.${var.domain_name} → Seoul Beanstalk"
+    tokyo = "tokyo.${var.domain_name} → Tokyo Beanstalk"
   }
 }
 
