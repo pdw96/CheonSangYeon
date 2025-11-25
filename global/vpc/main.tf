@@ -75,12 +75,13 @@ resource "aws_subnet" "seoul_private_beanstalk" {
 
 resource "aws_subnet" "seoul_tgw" {
   provider          = aws.seoul
+  count             = length(var.seoul_tgw_subnet_cidrs)
   vpc_id            = aws_vpc.seoul.id
-  cidr_block        = var.seoul_tgw_subnet_cidr
-  availability_zone = var.seoul_availability_zones[0]
+  cidr_block        = var.seoul_tgw_subnet_cidrs[count.index]
+  availability_zone = var.seoul_availability_zones[count.index]
 
   tags = {
-    Name = "seoul-tgw-subnet"
+    Name = "seoul-tgw-subnet-${count.index + 1}"
   }
 }
 
@@ -162,7 +163,8 @@ resource "aws_route_table" "seoul_tgw" {
 
 resource "aws_route_table_association" "seoul_tgw" {
   provider       = aws.seoul
-  subnet_id      = aws_subnet.seoul_tgw.id
+  count          = length(var.seoul_tgw_subnet_cidrs)
+  subnet_id      = aws_subnet.seoul_tgw[count.index].id
   route_table_id = aws_route_table.seoul_tgw.id
 }
 

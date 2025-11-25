@@ -17,10 +17,10 @@ variable "seoul_beanstalk_subnet_cidrs" {
   default     = ["20.0.10.0/24", "20.0.11.0/24"]
 }
 
-variable "seoul_tgw_subnet_cidr" {
-  description = "CIDR block for Seoul Transit Gateway subnet"
-  type        = string
-  default     = "20.0.20.0/24"
+variable "seoul_tgw_subnet_cidrs" {
+  description = "CIDR blocks for Seoul Transit Gateway subnets"
+  type        = list(string)
+  default     = ["20.0.20.0/24", "20.0.21.0/24"]
 }
 
 variable "seoul_availability_zones" {

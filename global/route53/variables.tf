@@ -1,7 +1,7 @@
 variable "domain_name" {
   description = "Primary domain name"
   type        = string
-  default     = "pdwo610.shop"
+  default     = "cloudupcon.cloud"
 }
 
 variable "enable_health_checks" {

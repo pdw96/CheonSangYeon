@@ -1,0 +1,611 @@
+terraform {
+  required_providers {
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = "~> 3.0"
+    }
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+
+  # S3 Backend for Terraform State
+  backend "s3" {
+    bucket         = "terraform-s3-cheonsangyeon"
+    key            = "terraform/azure-dr/terraform.tfstate"
+    region         = "ap-northeast-2"
+    encrypt        = true
+    dynamodb_table = "terraform-Dynamo-CheonSangYeon"
+  }
+}
+
+provider "azurerm" {
+  # Resource Provider 자동 등록 비활성화 (타임아웃 방지)
+  skip_provider_registration = true
+  
+  features {
+    resource_group {
+      prevent_deletion_if_contains_resources = false
+    }
+    virtual_machine {
+      delete_os_disk_on_deletion     = true
+      graceful_shutdown              = false
+      skip_shutdown_and_force_delete = false
+    }
+  }
+}
+
+provider "aws" {
+  alias  = "seoul"
+  region = "ap-northeast-2"
+}
+
+# ===== Data Sources =====
+
+# Seoul Terraform State (AWS VPN 정보 가져오기)
+data "terraform_remote_state" "seoul" {
+  backend = "s3"
+  config = {
+    bucket = "terraform-s3-cheonsangyeon"
+    key    = "terraform/seoul/terraform.tfstate"
+    region = "ap-northeast-2"
+  }
+}
+
+# AWS Aurora 정보 가져오기
+data "terraform_remote_state" "aurora" {
+  backend = "s3"
+  config = {
+    bucket = "terraform-s3-cheonsangyeon"
+    key    = "terraform/global-aurora/terraform.tfstate"
+    region = "ap-northeast-2"
+  }
+}
+
+# AWS Route53 정보 가져오기
+data "terraform_remote_state" "route53" {
+  backend = "s3"
+  config = {
+    bucket = "terraform-s3-cheonsangyeon"
+    key    = "terraform/global-route53/terraform.tfstate"
+    region = "ap-northeast-2"
+  }
+}
+
+# ===== Azure Resource Group =====
+
+resource "azurerm_resource_group" "dr" {
+  name     = var.resource_group_name
+  location = var.azure_location
+
+  tags = {
+    Environment = "DR"
+    Purpose     = "Disaster Recovery for AWS"
+    Region      = var.azure_location
+  }
+}
+
+# ===== Azure Virtual Network =====
+
+resource "azurerm_virtual_network" "dr" {
+  name                = var.vnet_name
+  location            = azurerm_resource_group.dr.location
+  resource_group_name = azurerm_resource_group.dr.name
+  address_space       = [var.vnet_address_space]
+
+  tags = {
+    Environment = "DR"
+    Purpose     = "DR VNet"
+  }
+}
+
+# Subnet for App Services
+resource "azurerm_subnet" "app" {
+  name                 = "app-subnet"
+  resource_group_name  = azurerm_resource_group.dr.name
+  virtual_network_name = azurerm_virtual_network.dr.name
+  address_prefixes     = [var.app_subnet_cidr]
+
+  delegation {
+    name = "app-service-delegation"
+    service_delegation {
+      name    = "Microsoft.Web/serverFarms"
+      actions = ["Microsoft.Network/virtualNetworks/subnets/action"]
+    }
+  }
+}
+
+# Subnet for Database
+resource "azurerm_subnet" "db" {
+  name                 = "db-subnet"
+  resource_group_name  = azurerm_resource_group.dr.name
+  virtual_network_name = azurerm_virtual_network.dr.name
+  address_prefixes     = [var.db_subnet_cidr]
+
+  delegation {
+    name = "mysql-delegation"
+    service_delegation {
+      name = "Microsoft.DBforMySQL/flexibleServers"
+      actions = [
+        "Microsoft.Network/virtualNetworks/subnets/join/action",
+      ]
+    }
+  }
+}
+
+# Subnet for VPN Gateway
+resource "azurerm_subnet" "gateway" {
+  name                 = "GatewaySubnet" # 이름은 반드시 GatewaySubnet
+  resource_group_name  = azurerm_resource_group.dr.name
+  virtual_network_name = azurerm_virtual_network.dr.name
+  address_prefixes     = [var.gateway_subnet_cidr]
+}
+
+# ===== Azure Network Security Groups =====
+
+resource "azurerm_network_security_group" "app" {
+  name                = "app-nsg"
+  location            = azurerm_resource_group.dr.location
+  resource_group_name = azurerm_resource_group.dr.name
+
+  security_rule {
+    name                       = "Allow-HTTPS"
+    priority                   = 100
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "443"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
+    name                       = "Allow-HTTP"
+    priority                   = 110
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "80"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+
+  tags = {
+    Environment = "DR"
+  }
+}
+
+resource "azurerm_network_security_group" "db" {
+  name                = "db-nsg"
+  location            = azurerm_resource_group.dr.location
+  resource_group_name = azurerm_resource_group.dr.name
+
+  security_rule {
+    name                       = "Allow-MySQL-from-App"
+    priority                   = 100
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "3306"
+    source_address_prefix      = var.app_subnet_cidr
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
+    name                       = "Allow-MySQL-from-AWS"
+    priority                   = 110
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "3306"
+    source_address_prefixes    = ["20.0.0.0/16", "40.0.0.0/16"] # AWS VPCs
+    destination_address_prefix = "*"
+  }
+
+  tags = {
+    Environment = "DR"
+  }
+}
+
+resource "azurerm_subnet_network_security_group_association" "app" {
+  subnet_id                 = azurerm_subnet.app.id
+  network_security_group_id = azurerm_network_security_group.app.id
+}
+
+resource "azurerm_subnet_network_security_group_association" "db" {
+  subnet_id                 = azurerm_subnet.db.id
+  network_security_group_id = azurerm_network_security_group.db.id
+}
+
+# ===== Azure MySQL Flexible Server (DR Database) =====
+
+resource "azurerm_mysql_flexible_server" "dr" {
+  name                   = var.mysql_server_name
+  resource_group_name    = azurerm_resource_group.dr.name
+  location               = azurerm_resource_group.dr.location
+  administrator_login    = var.mysql_admin_username
+  administrator_password = var.mysql_admin_password
+  backup_retention_days  = 7
+  delegated_subnet_id    = azurerm_subnet.db.id
+  sku_name               = var.mysql_sku_name
+  version                = "8.0.21"
+
+  storage {
+    auto_grow_enabled = true
+    size_gb           = var.mysql_storage_gb
+    iops              = 360
+  }
+
+  maintenance_window {
+    day_of_week  = 0
+    start_hour   = 3
+    start_minute = 0
+  }
+
+  tags = {
+    Environment = "DR"
+    Purpose     = "Aurora Replica for DR via DMS"
+  }
+
+  depends_on = [azurerm_subnet.db]
+}
+
+resource "azurerm_mysql_flexible_database" "webapp" {
+  name                = var.mysql_database_name
+  resource_group_name = azurerm_resource_group.dr.name
+  server_name         = azurerm_mysql_flexible_server.dr.name
+  charset             = "utf8mb4"
+  collation           = "utf8mb4_unicode_ci"
+}
+
+# AWS DMS를 위한 방화벽 규칙 (VPN을 통한 Private IP)
+resource "azurerm_mysql_flexible_server_firewall_rule" "aws_vpn" {
+  name                = "AllowAWSVPN"
+  resource_group_name = azurerm_resource_group.dr.name
+  server_name         = azurerm_mysql_flexible_server.dr.name
+  start_ip_address    = "20.0.0.0"  # AWS Seoul VPC CIDR 시작
+  end_ip_address      = "20.255.255.255"  # AWS Seoul VPC CIDR 끝
+}
+
+# Azure Services 접근 허용
+resource "azurerm_mysql_flexible_server_firewall_rule" "azure_services" {
+  name                = "AllowAzureServices"
+  resource_group_name = azurerm_resource_group.dr.name
+  server_name         = azurerm_mysql_flexible_server.dr.name
+  start_ip_address    = "0.0.0.0"
+  end_ip_address      = "0.0.0.0"
+}
+
+# ===== Azure App Service (DR Application) =====
+
+resource "azurerm_service_plan" "dr" {
+  name                = var.app_service_plan_name
+  location            = azurerm_resource_group.dr.location
+  resource_group_name = azurerm_resource_group.dr.name
+  os_type             = "Linux"
+  sku_name            = var.app_service_sku
+
+  tags = {
+    Environment = "DR"
+  }
+}
+
+resource "azurerm_linux_web_app" "dr" {
+  name                = var.web_app_name
+  location            = azurerm_resource_group.dr.location
+  resource_group_name = azurerm_resource_group.dr.name
+  service_plan_id     = azurerm_service_plan.dr.id
+
+  site_config {
+    always_on        = true  # B1 SKU에서는 사용 가능
+    health_check_path = "/health"
+    
+    application_stack {
+      node_version = "18-lts"
+    }
+
+    vnet_route_all_enabled = true
+  }
+
+  app_settings = {
+    "WEBSITES_ENABLE_APP_SERVICE_STORAGE" = "false"
+    "WEBSITE_DNS_SERVER"                  = "168.63.129.16"
+    
+    # Application settings
+    "NODE_ENV"           = "production"
+    "DR_MODE"            = "true"
+    "PRIMARY_REGION"     = "AWS"
+    "FAILOVER_ENABLED"   = "true"
+    
+    # Database connection (Azure MySQL Flexible Server)
+    "DB_HOST"     = azurerm_mysql_flexible_server.dr.fqdn
+    "DB_NAME"     = var.mysql_database_name
+    "DB_USER"     = var.mysql_admin_username
+    "DB_PASSWORD" = var.mysql_admin_password
+    "DB_PORT"     = "3306"
+  }
+
+  virtual_network_subnet_id = azurerm_subnet.app.id
+
+  https_only = true
+
+  tags = {
+    Environment = "DR"
+    Purpose     = "DR Web Application"
+  }
+
+  depends_on = [
+    azurerm_service_plan.dr
+  ]
+}
+
+# ===== Azure Storage Account (for backups and static assets) =====
+
+resource "azurerm_storage_account" "dr" {
+  name                     = var.storage_account_name
+  resource_group_name      = azurerm_resource_group.dr.name
+  location                 = azurerm_resource_group.dr.location
+  account_tier             = "Standard"
+  account_replication_type = "GRS" # Geo-Redundant for DR
+  account_kind             = "StorageV2"
+
+  blob_properties {
+    versioning_enabled = true
+    
+    delete_retention_policy {
+      days = 30
+    }
+    
+    container_delete_retention_policy {
+      days = 30
+    }
+  }
+
+  tags = {
+    Environment = "DR"
+    Purpose     = "DR Storage and Backups"
+  }
+}
+
+resource "azurerm_storage_container" "backups" {
+  name                  = "database-backups"
+  storage_account_name  = azurerm_storage_account.dr.name
+  container_access_type = "private"
+}
+
+resource "azurerm_storage_container" "assets" {
+  name                  = "static-assets"
+  storage_account_name  = azurerm_storage_account.dr.name
+  container_access_type = "blob"
+}
+
+# ===== Azure VPN Gateway (for AWS-Azure connectivity) =====
+
+resource "azurerm_public_ip" "vpn_gateway" {
+  name                = "vpn-gateway-pip"
+  location            = azurerm_resource_group.dr.location
+  resource_group_name = azurerm_resource_group.dr.name
+  allocation_method   = "Static"
+  sku                 = "Standard"
+
+  tags = {
+    Environment = "DR"
+    Purpose     = "VPN Gateway Public IP"
+  }
+}
+
+resource "azurerm_virtual_network_gateway" "vpn" {
+  name                = var.vpn_gateway_name
+  location            = azurerm_resource_group.dr.location
+  resource_group_name = azurerm_resource_group.dr.name
+
+  type     = "Vpn"
+  vpn_type = "RouteBased"
+
+  active_active = false
+  enable_bgp    = false # AWS APIPA \ubc94\uc704 \ubd88\uc77c\uce58\ub85c BGP \ube44\ud65c\uc131\ud654
+  sku           = var.vpn_gateway_sku
+
+  # 명시적 종속성 추가
+  depends_on = [
+    azurerm_subnet.gateway,
+    azurerm_virtual_network.dr,
+    azurerm_public_ip.vpn_gateway
+  ]
+
+  ip_configuration {
+    name                          = "vnetGatewayConfig"
+    public_ip_address_id          = azurerm_public_ip.vpn_gateway.id
+    private_ip_address_allocation = "Dynamic"
+    subnet_id                     = azurerm_subnet.gateway.id
+  }
+
+  # BGP \ube44\ud65c\uc131\ud654 (AWS APIPA \ubc94\uc704 \ubd88\uc77c\uce58)
+  # bgp_settings {
+  #   asn = var.azure_bgp_asn
+  # }
+
+  tags = {
+    Environment = "DR"
+    Purpose     = "AWS-Azure VPN Connection"
+  }
+}
+
+# Local Network Gateway (AWS 측 정보 - Seoul State에서 자동으로 가져오기)
+resource "azurerm_local_network_gateway" "aws_seoul" {
+  name                = "aws-seoul-lng"
+  location            = azurerm_resource_group.dr.location
+  resource_group_name = azurerm_resource_group.dr.name
+  
+  # AWS VPN Tunnel 1 IP (Seoul State에서 자동 가져오기)
+  gateway_address = try(
+    data.terraform_remote_state.seoul.outputs.azure_vpn_tunnel_addresses.tunnel_1_address,
+    var.aws_vpn_gateway_ip != "" ? var.aws_vpn_gateway_ip : "1.1.1.1"
+  )
+  
+  address_space = ["20.0.0.0/16"] # AWS Seoul VPC CIDR
+
+  # BGP \ube44\ud65c\uc131\ud654\ub85c Static Route \uc0ac\uc6a9 (\ud638\ud658\uc131 \ubb38\uc81c)
+  # bgp_settings {
+  #   asn = ...
+  #   bgp_peering_address = ...
+  # }
+
+  tags = {
+    Environment = "DR"
+  }
+}
+
+# VPN Connection
+resource "azurerm_virtual_network_gateway_connection" "aws_azure" {
+  name                = "aws-azure-vpn-connection"
+  location            = azurerm_resource_group.dr.location
+  resource_group_name = azurerm_resource_group.dr.name
+
+  type                       = "IPsec"
+  virtual_network_gateway_id = azurerm_virtual_network_gateway.vpn.id
+  local_network_gateway_id   = azurerm_local_network_gateway.aws_seoul.id
+
+  shared_key = var.vpn_shared_key
+  enable_bgp = false # AWS APIPA \ubc94\uc704 \ubd88\uc77c\uce58\ub85c BGP \ube44\ud65c\uc131\ud654
+
+  ipsec_policy {
+    dh_group         = "DHGroup14"
+    ike_encryption   = "AES256"
+    ike_integrity    = "SHA256"
+    ipsec_encryption = "AES256"
+    ipsec_integrity  = "SHA256"
+    pfs_group        = "PFS14"        # AWS VPN과 일치
+    sa_lifetime      = 3600           # AWS 기본값
+  }
+
+  tags = {
+    Environment = "DR"
+    Purpose     = "Hybrid Cloud Connectivity"
+  }
+
+  depends_on = [
+    azurerm_virtual_network_gateway.vpn,
+    azurerm_local_network_gateway.aws_seoul
+  ]
+}
+
+# ===== Azure Monitor & Alerts =====
+
+resource "azurerm_monitor_action_group" "dr_alerts" {
+  name                = "dr-action-group"
+  resource_group_name = azurerm_resource_group.dr.name
+  short_name          = "dralerts"
+
+  email_receiver {
+    name          = "sendtoadmin"
+    email_address = var.alert_email
+  }
+
+  tags = {
+    Environment = "DR"
+  }
+}
+
+# App Service availability alert
+resource "azurerm_monitor_metric_alert" "app_down" {
+  name                = "app-service-down-alert"
+  resource_group_name = azurerm_resource_group.dr.name
+  scopes              = [azurerm_linux_web_app.dr.id]
+  description         = "Alert when DR app service is down"
+  severity            = 0
+
+  criteria {
+    metric_namespace = "Microsoft.Web/sites"
+    metric_name      = "HealthCheckStatus"
+    aggregation      = "Average"
+    operator         = "LessThan"
+    threshold        = 50
+  }
+
+  frequency   = "PT1M"
+  window_size = "PT5M"
+
+  action {
+    action_group_id = azurerm_monitor_action_group.dr_alerts.id
+  }
+
+  tags = {
+    Environment = "DR"
+  }
+}
+
+# Database availability alert
+# MySQL 할당량 부족으로 DB Alert 비활성화
+# resource "azurerm_monitor_metric_alert" "db_down" {
+#   name                = "mysql-server-down-alert"
+#   resource_group_name = azurerm_resource_group.dr.name
+#   scopes              = [azurerm_mysql_flexible_server.dr.id]
+#   description         = "Alert when DR MySQL server is unavailable"
+#   severity            = 0
+#
+#   criteria {
+#     metric_namespace = "Microsoft.DBforMySQL/flexibleServers"
+#     metric_name      = "cpu_percent"
+#     aggregation      = "Average"
+#     operator         = "GreaterThan"
+#     threshold        = 90
+#   }
+#
+#   frequency   = "PT1M"
+#   window_size = "PT5M"
+#
+#   action {
+#     action_group_id = azurerm_monitor_action_group.dr_alerts.id
+#   }
+#
+#   tags = {
+#     Environment = "DR"
+#   }
+# }
+
+# ===== AWS Route53 Health Check for DR =====
+
+# Route53 Health Check for Azure App Service
+resource "aws_route53_health_check" "azure_dr" {
+  provider          = aws.seoul
+  fqdn              = azurerm_linux_web_app.dr.default_hostname
+  port              = 443
+  type              = "HTTPS"
+  resource_path     = "/health"
+  failure_threshold = 3
+  request_interval  = 30
+
+  tags = {
+    Name        = "azure-dr-health-check"
+    Environment = "DR"
+  }
+}
+
+# CloudWatch Alarm for Azure DR health
+resource "aws_cloudwatch_metric_alarm" "azure_dr_unhealthy" {
+  provider            = aws.seoul
+  alarm_name          = "azure-dr-endpoint-unhealthy"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "HealthCheckStatus"
+  namespace           = "AWS/Route53"
+  period              = 60
+  statistic           = "Minimum"
+  threshold           = 1
+  alarm_description   = "This metric monitors Azure DR endpoint health"
+  treat_missing_data  = "breaching"
+
+  dimensions = {
+    HealthCheckId = aws_route53_health_check.azure_dr.id
+  }
+
+  tags = {
+    Environment = "DR"
+  }
+}

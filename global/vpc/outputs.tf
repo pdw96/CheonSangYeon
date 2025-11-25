@@ -19,9 +19,9 @@ output "seoul_private_beanstalk_subnet_ids" {
   value       = aws_subnet.seoul_private_beanstalk[*].id
 }
 
-output "seoul_tgw_subnet_id" {
-  description = "Seoul Transit Gateway subnet ID"
-  value       = aws_subnet.seoul_tgw.id
+output "seoul_tgw_subnet_ids" {
+  description = "Seoul Transit Gateway subnet IDs"
+  value       = aws_subnet.seoul_tgw[*].id
 }
 
 output "seoul_public_route_table_id" {
