@@ -59,7 +59,7 @@ jobs:
         run: terraform plan -out=tfplan -no-color
 
       - name: Terraform Apply
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra') && github.event_name == 'push'
         working-directory: global/s3
         run: terraform apply -auto-approve tfplan
 
@@ -98,7 +98,7 @@ jobs:
         run: terraform plan -out=tfplan -no-color
 
       - name: Terraform Apply
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra') && github.event_name == 'push'
         working-directory: global/vpc
         run: terraform apply -auto-approve tfplan
 
@@ -145,7 +145,7 @@ jobs:
         run: terraform plan -out=tfplan -no-color
 
       - name: Terraform Apply
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra') && github.event_name == 'push'
         working-directory: Seoul
         run: terraform apply -auto-approve tfplan
 
@@ -192,7 +192,7 @@ jobs:
         run: terraform plan -out=tfplan -no-color
 
       - name: Terraform Apply
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra') && github.event_name == 'push'
         working-directory: Tokyo
         run: terraform apply -auto-approve tfplan
 
@@ -231,7 +231,7 @@ jobs:
         run: terraform plan -out=tfplan -no-color
 
       - name: Terraform Apply
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra') && github.event_name == 'push'
         working-directory: global/aurora
         run: terraform apply -auto-approve tfplan
 
@@ -270,7 +270,7 @@ jobs:
         run: terraform plan -out=tfplan -no-color
 
       - name: Terraform Apply
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra') && github.event_name == 'push'
         working-directory: global/tgw-peering
         run: terraform apply -auto-approve tfplan
 
@@ -317,7 +317,7 @@ jobs:
         run: terraform plan -out=tfplan -no-color
 
       - name: Terraform Apply
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra') && github.event_name == 'push'
         working-directory: global/dms
         run: terraform apply -auto-approve tfplan
 
@@ -356,7 +356,7 @@ jobs:
         run: terraform plan -out=tfplan -no-color
 
       - name: Terraform Apply
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra') && github.event_name == 'push'
         working-directory: global/cloudfront
         run: terraform apply -auto-approve tfplan
 
@@ -395,7 +395,7 @@ jobs:
         run: terraform plan -out=tfplan -no-color
 
       - name: Terraform Apply
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra') && github.event_name == 'push'
         working-directory: global/route53
         run: terraform apply -auto-approve tfplan
 
@@ -449,7 +449,7 @@ jobs:
         run: terraform plan -out=tfplan -no-color
 
       - name: Terraform Apply
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra') && github.event_name == 'push'
         working-directory: Azure
         run: terraform apply -auto-approve tfplan
 
