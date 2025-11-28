@@ -44,7 +44,13 @@ on:
         options:
           - plan
           - apply
+          - destroy
         default: plan
+      confirm_destroy:
+        description: '⚠️ Destroy 확인 (destroy 선택 시 "yes" 입력)'
+        required: false
+        type: string
+        default: ''
 
 env:
   TF_VERSION: "1.6.0"
@@ -133,13 +139,24 @@ jobs:
         run: terraform validate
 
       - name: Terraform Plan
+        if: github.event.inputs.action != 'destroy'
         working-directory: global/s3
         run: terraform plan -out=tfplan -no-color
+
+      - name: Terraform Plan Destroy
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy' && github.event.inputs.confirm_destroy == 'yes'
+        working-directory: global/s3
+        run: terraform plan -destroy -out=tfplan -no-color
 
       - name: Terraform Apply
         if: |
           (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra')) ||
           (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
+        working-directory: global/s3
+        run: terraform apply -auto-approve tfplan
+
+      - name: Terraform Destroy
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy' && github.event.inputs.confirm_destroy == 'yes'
         working-directory: global/s3
         run: terraform apply -auto-approve tfplan
 
@@ -181,13 +198,24 @@ jobs:
         run: terraform validate
 
       - name: Terraform Plan
+        if: github.event.inputs.action != 'destroy'
         working-directory: global/vpc
         run: terraform plan -out=tfplan -no-color
+
+      - name: Terraform Plan Destroy
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy' && github.event.inputs.confirm_destroy == 'yes'
+        working-directory: global/vpc
+        run: terraform plan -destroy -out=tfplan -no-color
 
       - name: Terraform Apply
         if: |
           (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra')) ||
           (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
+        working-directory: global/vpc
+        run: terraform apply -auto-approve tfplan
+
+      - name: Terraform Destroy
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy' && github.event.inputs.confirm_destroy == 'yes'
         working-directory: global/vpc
         run: terraform apply -auto-approve tfplan
 
@@ -237,13 +265,24 @@ jobs:
         run: terraform validate
 
       - name: Terraform Plan
+        if: github.event.inputs.action != 'destroy'
         working-directory: Seoul
         run: terraform plan -out=tfplan -no-color
+
+      - name: Terraform Plan Destroy
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy' && github.event.inputs.confirm_destroy == 'yes'
+        working-directory: Seoul
+        run: terraform plan -destroy -out=tfplan -no-color
 
       - name: Terraform Apply
         if: |
           (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra')) ||
           (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
+        working-directory: Seoul
+        run: terraform apply -auto-approve tfplan
+
+      - name: Terraform Destroy
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy' && github.event.inputs.confirm_destroy == 'yes'
         working-directory: Seoul
         run: terraform apply -auto-approve tfplan
 
@@ -293,13 +332,24 @@ jobs:
         run: terraform validate
 
       - name: Terraform Plan
+        if: github.event.inputs.action != 'destroy'
         working-directory: Tokyo
         run: terraform plan -out=tfplan -no-color
+
+      - name: Terraform Plan Destroy
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy' && github.event.inputs.confirm_destroy == 'yes'
+        working-directory: Tokyo
+        run: terraform plan -destroy -out=tfplan -no-color
 
       - name: Terraform Apply
         if: |
           (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra')) ||
           (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
+        working-directory: Tokyo
+        run: terraform apply -auto-approve tfplan
+
+      - name: Terraform Destroy
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy' && github.event.inputs.confirm_destroy == 'yes'
         working-directory: Tokyo
         run: terraform apply -auto-approve tfplan
 
@@ -341,13 +391,24 @@ jobs:
         run: terraform validate
 
       - name: Terraform Plan
+        if: github.event.inputs.action != 'destroy'
         working-directory: global/aurora
         run: terraform plan -out=tfplan -no-color
+
+      - name: Terraform Plan Destroy
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy' && github.event.inputs.confirm_destroy == 'yes'
+        working-directory: global/aurora
+        run: terraform plan -destroy -out=tfplan -no-color
 
       - name: Terraform Apply
         if: |
           (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra')) ||
           (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
+        working-directory: global/aurora
+        run: terraform apply -auto-approve tfplan
+
+      - name: Terraform Destroy
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy' && github.event.inputs.confirm_destroy == 'yes'
         working-directory: global/aurora
         run: terraform apply -auto-approve tfplan
 
@@ -389,13 +450,24 @@ jobs:
         run: terraform validate
 
       - name: Terraform Plan
+        if: github.event.inputs.action != 'destroy'
         working-directory: global/tgw-peering
         run: terraform plan -out=tfplan -no-color
+
+      - name: Terraform Plan Destroy
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy' && github.event.inputs.confirm_destroy == 'yes'
+        working-directory: global/tgw-peering
+        run: terraform plan -destroy -out=tfplan -no-color
 
       - name: Terraform Apply
         if: |
           (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra')) ||
           (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
+        working-directory: global/tgw-peering
+        run: terraform apply -auto-approve tfplan
+
+      - name: Terraform Destroy
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy' && github.event.inputs.confirm_destroy == 'yes'
         working-directory: global/tgw-peering
         run: terraform apply -auto-approve tfplan
 
@@ -429,14 +501,6 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Create tfvars
-        working-directory: global/dms
-        run: |
-          cat > terraform.tfvars << EOF
-          azure_mysql_username = "${{ secrets.AZURE_MYSQL_USERNAME }}"
-          azure_mysql_password = "${{ secrets.AZURE_MYSQL_PASSWORD }}"
-          EOF
-
       - name: Terraform Init
         working-directory: global/dms
         run: terraform init
@@ -446,13 +510,24 @@ jobs:
         run: terraform validate
 
       - name: Terraform Plan
+        if: github.event.inputs.action != 'destroy'
         working-directory: global/dms
         run: terraform plan -out=tfplan -no-color
+
+      - name: Terraform Plan Destroy
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy' && github.event.inputs.confirm_destroy == 'yes'
+        working-directory: global/dms
+        run: terraform plan -destroy -out=tfplan -no-color
 
       - name: Terraform Apply
         if: |
           (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra')) ||
           (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
+        working-directory: global/dms
+        run: terraform apply -auto-approve tfplan
+
+      - name: Terraform Destroy
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy' && github.event.inputs.confirm_destroy == 'yes'
         working-directory: global/dms
         run: terraform apply -auto-approve tfplan
 
@@ -494,13 +569,24 @@ jobs:
         run: terraform validate
 
       - name: Terraform Plan
+        if: github.event.inputs.action != 'destroy'
         working-directory: global/cloudfront
         run: terraform plan -out=tfplan -no-color
+
+      - name: Terraform Plan Destroy
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy' && github.event.inputs.confirm_destroy == 'yes'
+        working-directory: global/cloudfront
+        run: terraform plan -destroy -out=tfplan -no-color
 
       - name: Terraform Apply
         if: |
           (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra')) ||
           (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
+        working-directory: global/cloudfront
+        run: terraform apply -auto-approve tfplan
+
+      - name: Terraform Destroy
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy' && github.event.inputs.confirm_destroy == 'yes'
         working-directory: global/cloudfront
         run: terraform apply -auto-approve tfplan
 
@@ -542,13 +628,24 @@ jobs:
         run: terraform validate
 
       - name: Terraform Plan
+        if: github.event.inputs.action != 'destroy'
         working-directory: global/route53
         run: terraform plan -out=tfplan -no-color
+
+      - name: Terraform Plan Destroy
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy' && github.event.inputs.confirm_destroy == 'yes'
+        working-directory: global/route53
+        run: terraform plan -destroy -out=tfplan -no-color
 
       - name: Terraform Apply
         if: |
           (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra')) ||
           (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
+        working-directory: global/route53
+        run: terraform apply -auto-approve tfplan
+
+      - name: Terraform Destroy
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy' && github.event.inputs.confirm_destroy == 'yes'
         working-directory: global/route53
         run: terraform apply -auto-approve tfplan
 
@@ -605,13 +702,24 @@ jobs:
         run: terraform validate
 
       - name: Terraform Plan
+        if: github.event.inputs.action != 'destroy'
         working-directory: Azure
         run: terraform plan -out=tfplan -no-color
+
+      - name: Terraform Plan Destroy
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy' && github.event.inputs.confirm_destroy == 'yes'
+        working-directory: Azure
+        run: terraform plan -destroy -out=tfplan -no-color
 
       - name: Terraform Apply
         if: |
           (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra')) ||
           (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
+        working-directory: Azure
+        run: terraform apply -auto-approve tfplan
+
+      - name: Terraform Destroy
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy' && github.event.inputs.confirm_destroy == 'yes'
         working-directory: Azure
         run: terraform apply -auto-approve tfplan
 
