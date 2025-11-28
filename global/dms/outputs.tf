@@ -18,11 +18,6 @@ output "target_endpoint_arn" {
   value       = aws_dms_endpoint.target_aurora_mysql.endpoint_arn
 }
 
-output "target_azure_endpoint_arn" {
-  description = "ARN of the Target Endpoint (Azure MySQL)"
-  value       = aws_dms_endpoint.target_azure_mysql.endpoint_arn
-}
-
 output "migration_task_arn" {
   description = "ARN of the Migration Task (Aurora)"
   value       = aws_dms_replication_task.migration_task.replication_task_arn
