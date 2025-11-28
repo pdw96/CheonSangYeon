@@ -4,6 +4,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    time = {
+      source  = "hashicorp/time"
+      version = "~> 0.9"
+    }
   }
 
   # S3 Backend for Terraform State
@@ -492,6 +496,12 @@ resource "aws_iam_role_policy" "rds_proxy_seoul" {
   })
 }
 
+# Wait for IAM role propagation (Seoul)
+resource "time_sleep" "wait_for_iam_seoul" {
+  depends_on      = [aws_iam_role_policy.rds_proxy_seoul]
+  create_duration = "30s"
+}
+
 # RDS Proxy for Seoul Cluster
 resource "aws_db_proxy" "aurora_seoul" {
   provider               = aws.seoul
@@ -506,6 +516,8 @@ resource "aws_db_proxy" "aurora_seoul" {
   vpc_subnet_ids         = local.seoul_subnet_ids
   require_tls            = false
   idle_client_timeout    = 1800
+
+  depends_on = [time_sleep.wait_for_iam_seoul]
 
   tags = {
     Name = "aurora-global-seoul-proxy"
@@ -601,6 +613,12 @@ resource "aws_iam_role_policy" "rds_proxy_tokyo" {
   })
 }
 
+# Wait for IAM role propagation (Tokyo)
+resource "time_sleep" "wait_for_iam_tokyo" {
+  depends_on      = [aws_iam_role_policy.rds_proxy_tokyo]
+  create_duration = "30s"
+}
+
 # RDS Proxy for Tokyo Cluster
 resource "aws_db_proxy" "aurora_tokyo" {
   provider               = aws.tokyo
@@ -615,6 +633,8 @@ resource "aws_db_proxy" "aurora_tokyo" {
   vpc_subnet_ids         = local.tokyo_subnet_ids
   require_tls            = false
   idle_client_timeout    = 1800
+
+  depends_on = [time_sleep.wait_for_iam_tokyo]
 
   tags = {
     Name = "aurora-global-tokyo-proxy"

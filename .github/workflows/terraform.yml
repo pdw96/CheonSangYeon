@@ -19,16 +19,94 @@ on:
       - 'Seoul/**'
       - 'Tokyo/**'
       - 'Azure/**'
+  workflow_dispatch:
+    inputs:
+      module:
+        description: '배포할 모듈 선택'
+        required: true
+        type: choice
+        options:
+          - all
+          - s3
+          - vpc
+          - seoul
+          - tokyo
+          - aurora
+          - tgw-peering
+          - dms
+          - cloudfront
+          - route53
+          - azure
+      action:
+        description: 'Terraform 액션'
+        required: true
+        type: choice
+        options:
+          - plan
+          - apply
+        default: plan
 
 env:
   TF_VERSION: "1.6.0"
   AWS_REGION: "ap-northeast-2"
 
 jobs:
+  # ===== 변경 감지 =====
+  detect-changes:
+    name: "🔍 Detect Changes"
+    runs-on: ubuntu-latest
+    outputs:
+      s3: ${{ steps.filter.outputs.s3 }}
+      vpc: ${{ steps.filter.outputs.vpc }}
+      seoul: ${{ steps.filter.outputs.seoul }}
+      tokyo: ${{ steps.filter.outputs.tokyo }}
+      aurora: ${{ steps.filter.outputs.aurora }}
+      tgw-peering: ${{ steps.filter.outputs.tgw-peering }}
+      dms: ${{ steps.filter.outputs.dms }}
+      cloudfront: ${{ steps.filter.outputs.cloudfront }}
+      route53: ${{ steps.filter.outputs.route53 }}
+      azure: ${{ steps.filter.outputs.azure }}
+      
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect file changes
+        uses: dorny/paths-filter@v2
+        id: filter
+        with:
+          filters: |
+            s3:
+              - 'global/s3/**'
+            vpc:
+              - 'global/vpc/**'
+            seoul:
+              - 'Seoul/**'
+            tokyo:
+              - 'Tokyo/**'
+            aurora:
+              - 'global/aurora/**'
+            tgw-peering:
+              - 'global/tgw-peering/**'
+            dms:
+              - 'global/dms/**'
+            cloudfront:
+              - 'global/cloudfront/**'
+            route53:
+              - 'global/route53/**'
+            azure:
+              - 'Azure/**'
+
   # ===== Stage 1: Global S3 Backend =====
   global-s3:
     name: "1. Global S3 Backend"
     runs-on: ubuntu-latest
+    needs: detect-changes
+    if: |
+      needs.detect-changes.outputs.s3 == 'true' ||
+      (github.event_name == 'workflow_dispatch' && (github.event.inputs.module == 's3' || github.event.inputs.module == 'all'))
     
     steps:
       - name: Checkout
@@ -59,7 +137,9 @@ jobs:
         run: terraform plan -out=tfplan -no-color
 
       - name: Terraform Apply
-        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra') && github.event_name == 'push'
+        if: |
+          (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra')) ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
         working-directory: global/s3
         run: terraform apply -auto-approve tfplan
 
@@ -67,7 +147,14 @@ jobs:
   global-vpc:
     name: "2. Global VPC"
     runs-on: ubuntu-latest
-    needs: global-s3
+    needs: [detect-changes, global-s3]
+    if: |
+      always() &&
+      (needs.global-s3.result == 'success' || needs.global-s3.result == 'skipped') &&
+      (
+        needs.detect-changes.outputs.vpc == 'true' ||
+        (github.event_name == 'workflow_dispatch' && (github.event.inputs.module == 'vpc' || github.event.inputs.module == 'all'))
+      )
     
     steps:
       - name: Checkout
@@ -98,7 +185,9 @@ jobs:
         run: terraform plan -out=tfplan -no-color
 
       - name: Terraform Apply
-        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra') && github.event_name == 'push'
+        if: |
+          (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra')) ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
         working-directory: global/vpc
         run: terraform apply -auto-approve tfplan
 
@@ -106,7 +195,14 @@ jobs:
   seoul:
     name: "3. Seoul Region"
     runs-on: ubuntu-latest
-    needs: global-vpc
+    needs: [detect-changes, global-vpc]
+    if: |
+      always() &&
+      (needs.global-vpc.result == 'success' || needs.global-vpc.result == 'skipped') &&
+      (
+        needs.detect-changes.outputs.seoul == 'true' ||
+        (github.event_name == 'workflow_dispatch' && (github.event.inputs.module == 'seoul' || github.event.inputs.module == 'all'))
+      )
     
     steps:
       - name: Checkout
@@ -145,7 +241,9 @@ jobs:
         run: terraform plan -out=tfplan -no-color
 
       - name: Terraform Apply
-        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra') && github.event_name == 'push'
+        if: |
+          (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra')) ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
         working-directory: Seoul
         run: terraform apply -auto-approve tfplan
 
@@ -153,7 +251,14 @@ jobs:
   tokyo:
     name: "4. Tokyo Region"
     runs-on: ubuntu-latest
-    needs: seoul
+    needs: [detect-changes, seoul]
+    if: |
+      always() &&
+      (needs.seoul.result == 'success' || needs.seoul.result == 'skipped') &&
+      (
+        needs.detect-changes.outputs.tokyo == 'true' ||
+        (github.event_name == 'workflow_dispatch' && (github.event.inputs.module == 'tokyo' || github.event.inputs.module == 'all'))
+      )
     
     steps:
       - name: Checkout
@@ -192,7 +297,9 @@ jobs:
         run: terraform plan -out=tfplan -no-color
 
       - name: Terraform Apply
-        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra') && github.event_name == 'push'
+        if: |
+          (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra')) ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
         working-directory: Tokyo
         run: terraform apply -auto-approve tfplan
 
@@ -200,7 +307,14 @@ jobs:
   global-aurora:
     name: "5a. Global Aurora"
     runs-on: ubuntu-latest
-    needs: tokyo
+    needs: [detect-changes, tokyo]
+    if: |
+      always() &&
+      (needs.tokyo.result == 'success' || needs.tokyo.result == 'skipped') &&
+      (
+        needs.detect-changes.outputs.aurora == 'true' ||
+        (github.event_name == 'workflow_dispatch' && (github.event.inputs.module == 'aurora' || github.event.inputs.module == 'all'))
+      )
     
     steps:
       - name: Checkout
@@ -231,7 +345,9 @@ jobs:
         run: terraform plan -out=tfplan -no-color
 
       - name: Terraform Apply
-        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra') && github.event_name == 'push'
+        if: |
+          (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra')) ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
         working-directory: global/aurora
         run: terraform apply -auto-approve tfplan
 
@@ -239,7 +355,14 @@ jobs:
   tgw-peering:
     name: "5b. TGW Peering"
     runs-on: ubuntu-latest
-    needs: tokyo
+    needs: [detect-changes, tokyo]
+    if: |
+      always() &&
+      (needs.tokyo.result == 'success' || needs.tokyo.result == 'skipped') &&
+      (
+        needs.detect-changes.outputs.tgw-peering == 'true' ||
+        (github.event_name == 'workflow_dispatch' && (github.event.inputs.module == 'tgw-peering' || github.event.inputs.module == 'all'))
+      )
     
     steps:
       - name: Checkout
@@ -270,7 +393,9 @@ jobs:
         run: terraform plan -out=tfplan -no-color
 
       - name: Terraform Apply
-        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra') && github.event_name == 'push'
+        if: |
+          (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra')) ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
         working-directory: global/tgw-peering
         run: terraform apply -auto-approve tfplan
 
@@ -278,7 +403,15 @@ jobs:
   global-dms:
     name: "6. Global DMS"
     runs-on: ubuntu-latest
-    needs: [global-aurora, tgw-peering]
+    needs: [detect-changes, global-aurora, tgw-peering]
+    if: |
+      always() &&
+      (needs.global-aurora.result == 'success' || needs.global-aurora.result == 'skipped') &&
+      (needs.tgw-peering.result == 'success' || needs.tgw-peering.result == 'skipped') &&
+      (
+        needs.detect-changes.outputs.dms == 'true' ||
+        (github.event_name == 'workflow_dispatch' && (github.event.inputs.module == 'dms' || github.event.inputs.module == 'all'))
+      )
     
     steps:
       - name: Checkout
@@ -317,7 +450,9 @@ jobs:
         run: terraform plan -out=tfplan -no-color
 
       - name: Terraform Apply
-        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra') && github.event_name == 'push'
+        if: |
+          (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra')) ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
         working-directory: global/dms
         run: terraform apply -auto-approve tfplan
 
@@ -325,7 +460,14 @@ jobs:
   global-cloudfront:
     name: "7. Global CloudFront"
     runs-on: ubuntu-latest
-    needs: global-dms
+    needs: [detect-changes, global-dms]
+    if: |
+      always() &&
+      (needs.global-dms.result == 'success' || needs.global-dms.result == 'skipped') &&
+      (
+        needs.detect-changes.outputs.cloudfront == 'true' ||
+        (github.event_name == 'workflow_dispatch' && (github.event.inputs.module == 'cloudfront' || github.event.inputs.module == 'all'))
+      )
     
     steps:
       - name: Checkout
@@ -356,7 +498,9 @@ jobs:
         run: terraform plan -out=tfplan -no-color
 
       - name: Terraform Apply
-        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra') && github.event_name == 'push'
+        if: |
+          (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra')) ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
         working-directory: global/cloudfront
         run: terraform apply -auto-approve tfplan
 
@@ -364,7 +508,14 @@ jobs:
   global-route53:
     name: "8. Global Route53"
     runs-on: ubuntu-latest
-    needs: global-cloudfront
+    needs: [detect-changes, global-cloudfront]
+    if: |
+      always() &&
+      (needs.global-cloudfront.result == 'success' || needs.global-cloudfront.result == 'skipped') &&
+      (
+        needs.detect-changes.outputs.route53 == 'true' ||
+        (github.event_name == 'workflow_dispatch' && (github.event.inputs.module == 'route53' || github.event.inputs.module == 'all'))
+      )
     
     steps:
       - name: Checkout
@@ -395,7 +546,9 @@ jobs:
         run: terraform plan -out=tfplan -no-color
 
       - name: Terraform Apply
-        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra') && github.event_name == 'push'
+        if: |
+          (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra')) ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
         working-directory: global/route53
         run: terraform apply -auto-approve tfplan
 
@@ -403,7 +556,14 @@ jobs:
   azure:
     name: "9. Azure DR"
     runs-on: ubuntu-latest
-    needs: global-route53
+    needs: [detect-changes, global-route53]
+    if: |
+      always() &&
+      (needs.global-route53.result == 'success' || needs.global-route53.result == 'skipped') &&
+      (
+        needs.detect-changes.outputs.azure == 'true' ||
+        (github.event_name == 'workflow_dispatch' && (github.event.inputs.module == 'azure' || github.event.inputs.module == 'all'))
+      )
     
     steps:
       - name: Checkout
@@ -449,15 +609,17 @@ jobs:
         run: terraform plan -out=tfplan -no-color
 
       - name: Terraform Apply
-        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra') && github.event_name == 'push'
+        if: |
+          (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infra')) ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
         working-directory: Azure
         run: terraform apply -auto-approve tfplan
 
   # ===== Summary =====
   summary:
-    name: "Deployment Summary"
+    name: "📊 Deployment Summary"
     runs-on: ubuntu-latest
-    needs: azure
+    needs: [detect-changes, global-s3, global-vpc, seoul, tokyo, global-aurora, tgw-peering, global-dms, global-cloudfront, global-route53, azure]
     if: always()
     
     steps:
@@ -465,15 +627,21 @@ jobs:
         run: |
           echo "## 🚀 Terraform Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Pipeline Order" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "1. global/s3 → 2. global/vpc → 3. Seoul → 4. Tokyo" >> $GITHUB_STEP_SUMMARY
-          echo "    ↓" >> $GITHUB_STEP_SUMMARY
-          echo "5a. global/aurora ─┬─ 5b. tgw-peering" >> $GITHUB_STEP_SUMMARY
-          echo "                   ↓" >> $GITHUB_STEP_SUMMARY
-          echo "6. global/dms → 7. global/cloudfront → 8. global/route53 → 9. Azure" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔍 변경 감지 결과" >> $GITHUB_STEP_SUMMARY
+          echo "| 모듈 | 변경됨 |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| S3 | ${{ needs.detect-changes.outputs.s3 }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| VPC | ${{ needs.detect-changes.outputs.vpc }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Seoul | ${{ needs.detect-changes.outputs.seoul }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tokyo | ${{ needs.detect-changes.outputs.tokyo }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Aurora | ${{ needs.detect-changes.outputs.aurora }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| TGW Peering | ${{ needs.detect-changes.outputs.tgw-peering }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| DMS | ${{ needs.detect-changes.outputs.dms }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| CloudFront | ${{ needs.detect-changes.outputs.cloudfront }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Route53 | ${{ needs.detect-changes.outputs.route53 }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Azure | ${{ needs.detect-changes.outputs.azure }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 실행 결과" >> $GITHUB_STEP_SUMMARY
           echo "| Stage | Module | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|--------|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| 1 | Global S3 | ${{ needs.global-s3.result }} |" >> $GITHUB_STEP_SUMMARY
@@ -487,6 +655,16 @@ jobs:
           echo "| 8 | Global Route53 | ${{ needs.global-route53.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| 9 | Azure DR | ${{ needs.azure.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### ⚠️ Note" >> $GITHUB_STEP_SUMMARY
-          echo "ECR App Service는 EKS 담당자 배포 후 별도로 배포해야 합니다." >> $GITHUB_STEP_SUMMARY
-          echo "경로: \`Azure/deployments/ecr-appservice/\`" >> $GITHUB_STEP_SUMMARY
+          echo "### 📌 담당자별 모듈" >> $GITHUB_STEP_SUMMARY
+          echo "| 담당자 | 모듈 |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|------|" >> $GITHUB_STEP_SUMMARY
+          echo "| 인프라 | S3, VPC, Seoul, Tokyo, TGW-Peering |" >> $GITHUB_STEP_SUMMARY
+          echo "| 프론트/백엔드 | CloudFront, Route53 |" >> $GITHUB_STEP_SUMMARY
+          echo "| 람다 담당자 | (별도 워크플로우 권장) |" >> $GITHUB_STEP_SUMMARY
+          echo "| DB/DMS | Aurora, DMS |" >> $GITHUB_STEP_SUMMARY
+          echo "| Azure DR | Azure |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ⚠️ 주의사항" >> $GITHUB_STEP_SUMMARY
+          echo "- **skipped**: 해당 모듈의 파일이 변경되지 않아 건너뜀 (기존 리소스 유지)" >> $GITHUB_STEP_SUMMARY
+          echo "- **success**: 변경사항 적용 완료" >> $GITHUB_STEP_SUMMARY
+          echo "- ECR App Service는 EKS 담당자 배포 후 별도로 배포해야 합니다." >> $GITHUB_STEP_SUMMARY
