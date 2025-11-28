@@ -22,8 +22,8 @@ variable "vnet_name" {
 
 variable "vnet_address_space" {
   description = "Address space for Azure VNet"
-  type        = string
-  default     = "50.0.0.0/16" # AWS와 겹치지 않는 범위
+  type        = list(string)
+  default     = ["50.0.0.0/16"] # AWS와 겹치지 않는 범위
 }
 
 variable "app_subnet_cidr" {
@@ -102,6 +102,34 @@ variable "web_app_name" {
   description = "Name of the Web App"
   type        = string
   default     = "webapp-dr-multicloud"
+}
+
+# ===== ECR Settings (for Container Deployment) =====
+
+variable "ecr_registry_url" {
+  description = "AWS ECR registry URL (without https://)"
+  type        = string
+  default     = "" # 예: 299145660695.dkr.ecr.ap-northeast-2.amazonaws.com
+}
+
+variable "ecr_image_name" {
+  description = "ECR image name with tag"
+  type        = string
+  default     = "" # 예: my-app:latest
+}
+
+variable "ecr_username" {
+  description = "ECR username (AWS)"
+  type        = string
+  default     = "AWS"
+  sensitive   = true
+}
+
+variable "ecr_password" {
+  description = "ECR password (AWS ECR auth token)"
+  type        = string
+  sensitive   = true
+  default     = ""
 }
 
 # ===== Azure Storage Settings =====
@@ -202,4 +230,24 @@ variable "replication_lag_threshold_seconds" {
   description = "Maximum acceptable replication lag in seconds"
   type        = number
   default     = 60
+}
+
+variable "enable_auto_dms_migration" {
+  description = "Automatically start DMS migration task after Azure deployment"
+  type        = bool
+  default     = false
+}
+
+# ===== Route53 DNS Settings =====
+
+variable "create_azure_dns_record" {
+  description = "Create Route53 DNS record for Azure endpoint (azure.domain.com)"
+  type        = bool
+  default     = true
+}
+
+variable "enable_failover_routing" {
+  description = "Enable Route53 failover routing (Primary: AWS, Secondary: Azure)"
+  type        = bool
+  default     = false
 }

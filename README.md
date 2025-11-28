@@ -530,7 +530,7 @@ terraform apply
 - Transit Gateway: `tgw-0645318fdde116ec0`
 - Beanstalk CNAME: `seoul-webapp-env.eba-ztq5m3vp.ap-northeast-2.elasticbeanstalk.com`
 
-#### 5. Tokyo 리전 배포
+#### 5. Tokyo 리전 배포 (현재 삭제됨)
 ```bash
 cd Tokyo
 terraform init
@@ -541,7 +541,9 @@ terraform apply
 - Transit Gateway: `tgw-0c202cb272c772a84`
 - Beanstalk CNAME: `tokyo-webapp-env.eba-<id>.ap-northeast-1.elasticbeanstalk.com`
 
-#### 6. Transit Gateway Peering
+**현재 상태**: 🔴 삭제됨 (DR 전략 변경: AWS → Azure)
+
+#### 6. Transit Gateway Peering (현재 삭제됨)
 ```bash
 cd global/tgw-peering
 terraform init
@@ -550,6 +552,8 @@ terraform apply
 
 출력:
 - Peering Attachment ID: `tgw-attach-<id>`
+
+**현재 상태**: 🔴 삭제됨 (Tokyo 리전 삭제로 인해 불필요)
 
 #### 7. Route 53 배포
 ```bash
@@ -579,6 +583,122 @@ terraform apply
 
 ---
 
+### Azure DR 환경 배포 순서
+
+> 🔄 **멀티 클라우드 DR**: AWS (Primary) + Azure (DR)
+
+#### 9. Azure 기본 인프라 배포
+```bash
+cd Azure
+terraform init
+terraform apply
+```
+
+출력:
+- Resource Group: `rg-dr-multicloud`
+- VNet: `vnet-dr-multicloud` (50.0.0.0/16)
+- VPN Gateway: Azure VPN Gateway
+- MySQL: `mysql-dr-multicloud` (Private: 50.0.2.4)
+- App Service: `webapp-dr-multicloud` (ECR 기반)
+
+**주요 리소스**:
+- VNet Subnets:
+  - Gateway Subnet: 50.0.0.0/24
+  - App Subnet: 50.0.1.0/24
+  - DB Subnet: 50.0.2.0/24
+- VPN Connection: Azure ↔ AWS VPN
+- MySQL Flexible Server: Private VNet Integration
+- App Service: Linux (ECR Container)
+
+#### 10. AWS-Azure VPN 연결 설정
+```bash
+cd AWS_Seoul_Test
+terraform init
+terraform apply
+```
+
+출력:
+- VPN Connection: `vpn-0d25ac381ee624408`
+- Tunnel 1: 3.39.70.44 (UP)
+- Transit Gateway Route: 50.0.0.0/16 (active)
+
+**VPN 상태 확인**:
+```bash
+# AWS VPN Tunnel 상태
+aws ec2 describe-vpn-connections --vpn-connection-ids vpn-0d25ac381ee624408 --region ap-northeast-2
+
+# Azure VPN 연결 상태
+az network vpn-connection show \
+  --name azure-to-aws-vpn \
+  --resource-group rg-dr-multicloud \
+  --query connectionStatus
+```
+
+#### 11. DMS 마이그레이션 설정 (Aurora → Azure MySQL)
+```bash
+cd global/dms
+terraform init
+terraform apply
+```
+
+출력:
+- Replication Instance: `aurora-migration-replication-instance`
+- Source Endpoint: `source-aurora-mysql` (Aurora)
+- Target Endpoint: `target-azure-mysql` (50.0.2.4)
+- Migration Task: `aurora-to-azure-migration-task`
+
+**마이그레이션 시작**:
+```bash
+aws dms start-replication-task \
+  --replication-task-arn arn:aws:dms:ap-northeast-2:299145660695:task:4XGU77BA5ZDKZCJWAMCT2KES2A \
+  --start-replication-task-type start-replication
+```
+
+**마이그레이션 상태 확인**:
+```bash
+aws dms describe-replication-tasks \
+  --filters Name=replication-task-arn,Values=arn:aws:dms:ap-northeast-2:299145660695:task:4XGU77BA5ZDKZCJWAMCT2KES2A
+```
+
+#### 12. Azure App Service ECR 배포
+
+**사전 준비**:
+1. ECR 인증 토큰 생성:
+   ```bash
+   aws ecr get-login-password --region ap-northeast-2
+   ```
+
+2. `Azure/terraform.tfvars` 업데이트:
+   ```terraform
+   ecr_registry_url = "299145660695.dkr.ecr.ap-northeast-2.amazonaws.com"
+   ecr_image_name   = "seoul-portal-seoul-frontend:latest"
+   ecr_password     = "<ECR_TOKEN>"  # 12시간 유효
+   ```
+
+**배포**:
+```bash
+cd Azure
+terraform apply -auto-approve
+```
+
+출력:
+- App Service URL: `https://webapp-dr-multicloud.azurewebsites.net`
+- Container Image: ECR Frontend
+- Database: Azure MySQL (50.0.2.4)
+
+**배포 검증**:
+```bash
+# Health Check
+curl https://webapp-dr-multicloud.azurewebsites.net/health
+
+# 로그 확인
+az webapp log tail \
+  --name webapp-dr-multicloud \
+  --resource-group rg-dr-multicloud
+```
+
+---
+
 ## 현재 인프라 상태
 
 ### 배포 완료 ✅
@@ -587,11 +707,14 @@ terraform apply
 |------|------|-------------|
 | **global/s3** | ✅ 배포 완료 | S3 Bucket, DynamoDB Table |
 | **global/vpc** | ✅ 배포 완료 | 4개 VPC, Subnets, SG |
-| **global/aurora** | ✅ 배포 완료 | Global Cluster (Seoul Primary, Tokyo Secondary) |
+| **global/aurora** | ✅ 배포 완료 | Aurora Global Cluster (Seoul Primary) |
 | **Seoul** | ✅ 배포 완료 | TGW, VPN, Beanstalk, IDC |
-| **Tokyo** | ✅ 배포 완료 | TGW, VPN, Beanstalk, IDC |
-| **global/tgw-peering** | ✅ 배포 완료 | Seoul-Tokyo TGW Peering |
+| **Tokyo** | 🔴 삭제됨 | DR 전략 변경: AWS → Azure |
+| **global/tgw-peering** | 🔴 삭제됨 | Tokyo 리전 삭제로 불필요 |
 | **global/route53** | ✅ 배포 완료 | Hosted Zone, ACM, DNS Records |
+| **Azure** | ✅ 배포 완료 | VNet, VPN, MySQL, App Service |
+| **AWS-Azure VPN** | ✅ 연결 성공 | Tunnel UP, Route active |
+| **global/dms** | ✅ 마이그레이션 완료 | Aurora → Azure MySQL (100%) |
 
 ### 배포 대기 ⏳
 
@@ -599,6 +722,7 @@ terraform apply
 |------|------|-----------|
 | **global/cloudfront** | 🔴 삭제됨 | 재배포 예정 (기본 인증서) |
 | **ACM Certificate** | ⏳ PENDING_VALIDATION | 도메인 NS 레코드 설정 필요 |
+| **Azure App Service ECR** | ⏳ 배포 대기 | ECR 자격 증명 설정 후 apply |
 
 ---
 
@@ -612,15 +736,29 @@ terraform apply
 | Seoul TGW | `tgw-0645318fdde116ec0` |
 | Seoul Beanstalk | `seoul-webapp-env.eba-ztq5m3vp.ap-northeast-2.elasticbeanstalk.com` |
 | Aurora Primary | `aurora-global-seoul.cluster-<id>.ap-northeast-2.rds.amazonaws.com` |
+| VPN to Azure | `vpn-0d25ac381ee624408` (Tunnel 1: UP) |
 
 #### Tokyo Region (ap-northeast-1)
 | 리소스 | ID/ARN/Endpoint |
 |--------|-----------------|
-| Tokyo VPC | `vpc-06159dc6f94b291b6` |
-| Tokyo IDC VPC | `vpc-0c34333a4ac53f6a7` |
-| Tokyo TGW | `tgw-0c202cb272c772a84` |
-| Tokyo Beanstalk | `tokyo-webapp-env.eba-<id>.ap-northeast-1.elasticbeanstalk.com` |
-| Aurora Secondary | `aurora-global-tokyo.cluster-ro-<id>.ap-northeast-1.rds.amazonaws.com` |
+| Tokyo VPC | 🔴 삭제됨 |
+| Tokyo IDC VPC | 🔴 삭제됨 |
+| Tokyo TGW | 🔴 삭제됨 |
+| Tokyo Beanstalk | 🔴 삭제됨 |
+| Aurora Secondary | 🔴 삭제됨 |
+
+#### Azure Korea Central
+| 리소스 | ID/ARN/Endpoint |
+|--------|-----------------|
+| Resource Group | `rg-dr-multicloud` |
+| VNet | `vnet-dr-multicloud` (50.0.0.0/16) |
+| VPN Gateway | `vpngateway-dr-multicloud` (20.194.99.75) |
+| Local Network Gateway | `aws-seoul-lgw` (3.39.70.44) |
+| VPN Connection | `azure-to-aws-vpn` (Connected) |
+| MySQL Server | `mysql-dr-multicloud` (Private: 50.0.2.4) |
+| MySQL Database | `webapp_db` |
+| App Service | `webapp-dr-multicloud.azurewebsites.net` |
+| App Service Plan | `plan-dr-multicloud` (P1v3) |
 
 #### Global Resources
 | 리소스 | ID/ARN/Endpoint |
@@ -630,6 +768,9 @@ terraform apply
 | Route 53 Zone | `Z05494772SIP68YCM2RD2` |
 | ACM Certificate | `arn:aws:acm:us-east-1:299145660695:certificate/e8efcfba-b8d7-4da0-a3be-c4b82e5b17b4` |
 | Domain | `pdwo610.shop` |
+| DMS Replication Instance | `aurora-migration-replication-instance` |
+| DMS Migration Task | `aurora-to-azure-migration-task` (완료) |
+| ECR Repository | `seoul-portal-seoul-frontend` |
 
 ---
 

@@ -1,0 +1,492 @@
+name: Terraform Infrastructure CI/CD
+
+on:
+  push:
+    branches:
+      - main
+      - infra
+    paths:
+      - 'global/**'
+      - 'Seoul/**'
+      - 'Tokyo/**'
+      - 'Azure/**'
+      - '.github/workflows/terraform.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'global/**'
+      - 'Seoul/**'
+      - 'Tokyo/**'
+      - 'Azure/**'
+
+env:
+  TF_VERSION: "1.6.0"
+  AWS_REGION: "ap-northeast-2"
+
+jobs:
+  # ===== Stage 1: Global S3 Backend =====
+  global-s3:
+    name: "1. Global S3 Backend"
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform Init
+        working-directory: global/s3
+        run: terraform init
+
+      - name: Terraform Validate
+        working-directory: global/s3
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: global/s3
+        run: terraform plan -out=tfplan -no-color
+
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        working-directory: global/s3
+        run: terraform apply -auto-approve tfplan
+
+  # ===== Stage 2: Global VPC =====
+  global-vpc:
+    name: "2. Global VPC"
+    runs-on: ubuntu-latest
+    needs: global-s3
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform Init
+        working-directory: global/vpc
+        run: terraform init
+
+      - name: Terraform Validate
+        working-directory: global/vpc
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: global/vpc
+        run: terraform plan -out=tfplan -no-color
+
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        working-directory: global/vpc
+        run: terraform apply -auto-approve tfplan
+
+  # ===== Stage 3: Seoul Region =====
+  seoul:
+    name: "3. Seoul Region"
+    runs-on: ubuntu-latest
+    needs: global-vpc
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Create tfvars
+        working-directory: Seoul
+        run: |
+          cat > terraform.tfvars << EOF
+          seoul_key_name       = "${{ secrets.SEOUL_KEY_NAME }}"
+          ssh_private_key_path = "./cheonsangyeon.pem"
+          EOF
+
+      - name: Terraform Init
+        working-directory: Seoul
+        run: terraform init
+
+      - name: Terraform Validate
+        working-directory: Seoul
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: Seoul
+        run: terraform plan -out=tfplan -no-color
+
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        working-directory: Seoul
+        run: terraform apply -auto-approve tfplan
+
+  # ===== Stage 4: Tokyo Region =====
+  tokyo:
+    name: "4. Tokyo Region"
+    runs-on: ubuntu-latest
+    needs: seoul
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-1
+
+      - name: Create tfvars
+        working-directory: Tokyo
+        run: |
+          cat > terraform.tfvars << EOF
+          tokyo_key_name       = "${{ secrets.TOKYO_KEY_NAME }}"
+          ssh_private_key_path = "./cheonsangyeonjapan.pem"
+          EOF
+
+      - name: Terraform Init
+        working-directory: Tokyo
+        run: terraform init
+
+      - name: Terraform Validate
+        working-directory: Tokyo
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: Tokyo
+        run: terraform plan -out=tfplan -no-color
+
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        working-directory: Tokyo
+        run: terraform apply -auto-approve tfplan
+
+  # ===== Stage 5a: Global Aurora (Parallel) =====
+  global-aurora:
+    name: "5a. Global Aurora"
+    runs-on: ubuntu-latest
+    needs: tokyo
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform Init
+        working-directory: global/aurora
+        run: terraform init
+
+      - name: Terraform Validate
+        working-directory: global/aurora
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: global/aurora
+        run: terraform plan -out=tfplan -no-color
+
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        working-directory: global/aurora
+        run: terraform apply -auto-approve tfplan
+
+  # ===== Stage 5b: TGW Peering (Parallel) =====
+  tgw-peering:
+    name: "5b. TGW Peering"
+    runs-on: ubuntu-latest
+    needs: tokyo
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform Init
+        working-directory: global/tgw-peering
+        run: terraform init
+
+      - name: Terraform Validate
+        working-directory: global/tgw-peering
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: global/tgw-peering
+        run: terraform plan -out=tfplan -no-color
+
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        working-directory: global/tgw-peering
+        run: terraform apply -auto-approve tfplan
+
+  # ===== Stage 6: Global DMS =====
+  global-dms:
+    name: "6. Global DMS"
+    runs-on: ubuntu-latest
+    needs: [global-aurora, tgw-peering]
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Create tfvars
+        working-directory: global/dms
+        run: |
+          cat > terraform.tfvars << EOF
+          azure_mysql_username = "${{ secrets.AZURE_MYSQL_USERNAME }}"
+          azure_mysql_password = "${{ secrets.AZURE_MYSQL_PASSWORD }}"
+          EOF
+
+      - name: Terraform Init
+        working-directory: global/dms
+        run: terraform init
+
+      - name: Terraform Validate
+        working-directory: global/dms
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: global/dms
+        run: terraform plan -out=tfplan -no-color
+
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        working-directory: global/dms
+        run: terraform apply -auto-approve tfplan
+
+  # ===== Stage 7: Global CloudFront =====
+  global-cloudfront:
+    name: "7. Global CloudFront"
+    runs-on: ubuntu-latest
+    needs: global-dms
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform Init
+        working-directory: global/cloudfront
+        run: terraform init
+
+      - name: Terraform Validate
+        working-directory: global/cloudfront
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: global/cloudfront
+        run: terraform plan -out=tfplan -no-color
+
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        working-directory: global/cloudfront
+        run: terraform apply -auto-approve tfplan
+
+  # ===== Stage 8: Global Route53 =====
+  global-route53:
+    name: "8. Global Route53"
+    runs-on: ubuntu-latest
+    needs: global-cloudfront
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform Init
+        working-directory: global/route53
+        run: terraform init
+
+      - name: Terraform Validate
+        working-directory: global/route53
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: global/route53
+        run: terraform plan -out=tfplan -no-color
+
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        working-directory: global/route53
+        run: terraform apply -auto-approve tfplan
+
+  # ===== Stage 9: Azure DR Infrastructure =====
+  azure:
+    name: "9. Azure DR"
+    runs-on: ubuntu-latest
+    needs: global-route53
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Create tfvars
+        working-directory: Azure
+        run: |
+          cat > terraform.tfvars << EOF
+          mysql_admin_username = "${{ secrets.AZURE_MYSQL_USERNAME }}"
+          mysql_admin_password = "${{ secrets.AZURE_MYSQL_PASSWORD }}"
+          vpn_shared_key       = "${{ secrets.VPN_SHARED_KEY }}"
+          alert_email          = "${{ secrets.ALERT_EMAIL }}"
+          EOF
+
+      - name: Terraform Init
+        working-directory: Azure
+        run: terraform init
+
+      - name: Terraform Validate
+        working-directory: Azure
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: Azure
+        run: terraform plan -out=tfplan -no-color
+
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        working-directory: Azure
+        run: terraform apply -auto-approve tfplan
+
+  # ===== Summary =====
+  summary:
+    name: "Deployment Summary"
+    runs-on: ubuntu-latest
+    needs: azure
+    if: always()
+    
+    steps:
+      - name: Summary
+        run: |
+          echo "## 🚀 Terraform Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Pipeline Order" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "1. global/s3 → 2. global/vpc → 3. Seoul → 4. Tokyo" >> $GITHUB_STEP_SUMMARY
+          echo "    ↓" >> $GITHUB_STEP_SUMMARY
+          echo "5a. global/aurora ─┬─ 5b. tgw-peering" >> $GITHUB_STEP_SUMMARY
+          echo "                   ↓" >> $GITHUB_STEP_SUMMARY
+          echo "6. global/dms → 7. global/cloudfront → 8. global/route53 → 9. Azure" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Stage | Module | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| 1 | Global S3 | ${{ needs.global-s3.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 2 | Global VPC | ${{ needs.global-vpc.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 3 | Seoul | ${{ needs.seoul.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 4 | Tokyo | ${{ needs.tokyo.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 5a | Global Aurora | ${{ needs.global-aurora.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 5b | TGW Peering | ${{ needs.tgw-peering.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 6 | Global DMS | ${{ needs.global-dms.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 7 | Global CloudFront | ${{ needs.global-cloudfront.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 8 | Global Route53 | ${{ needs.global-route53.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 9 | Azure DR | ${{ needs.azure.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ⚠️ Note" >> $GITHUB_STEP_SUMMARY
+          echo "ECR App Service는 EKS 담당자 배포 후 별도로 배포해야 합니다." >> $GITHUB_STEP_SUMMARY
+          echo "경로: \`Azure/deployments/ecr-appservice/\`" >> $GITHUB_STEP_SUMMARY

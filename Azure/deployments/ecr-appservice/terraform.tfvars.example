@@ -1,0 +1,14 @@
+# ===== ECR Settings (for Container Deployment) =====
+ecr_registry_url = "299145660695.dkr.ecr.ap-northeast-2.amazonaws.com"
+ecr_image_name   = "seoul-portal-seoul-frontend:latest"
+ecr_username     = "AWS"
+ecr_password     = ""  # aws ecr get-login-password 명령으로 생성
+
+# ===== Database Settings =====
+mysql_admin_username = "azureadmin"
+mysql_admin_password = ""  # 실제 비밀번호 입력
+
+# ===== App Service Settings =====
+app_service_plan_name = "plan-ecr-dr"
+web_app_name          = "webapp-dr-multicloud"
+app_service_sku       = "B1"

@@ -292,6 +292,12 @@ resource "aws_iam_role_policy_attachment" "beanstalk_ec2_multicontainer" {
   policy_arn = "arn:aws:iam::aws:policy/AWSElasticBeanstalkMulticontainerDocker"
 }
 
+resource "aws_iam_role_policy_attachment" "beanstalk_ec2_ecr_readonly" {
+  provider   = aws.seoul
+  role       = aws_iam_role.beanstalk_ec2.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+}
+
 resource "aws_iam_instance_profile" "beanstalk_ec2" {
   provider = aws.seoul
   name     = "seoul-beanstalk-ec2-profile"
@@ -303,7 +309,7 @@ resource "aws_elastic_beanstalk_environment" "seoul_env" {
   provider            = aws.seoul
   name                = "seoul-webapp-env"
   application         = aws_elastic_beanstalk_application.seoul_app.name
-  solution_stack_name = "64bit Amazon Linux 2023 v4.7.5 running Python 3.11"
+  solution_stack_name = "64bit Amazon Linux 2023 v4.8.0 running Docker"
   tier                = "WebServer"
 
   setting {
@@ -405,88 +411,10 @@ resource "aws_elastic_beanstalk_environment" "seoul_env" {
   tags = {
     Name = "seoul-webapp-environment"
   }
-}
 
-# ===== Azure DR VPN Connection =====
-
-# Customer Gateway for Azure VPN
-resource "aws_customer_gateway" "azure_dr" {
-  count      = var.enable_azure_dr ? 1 : 0
-  provider   = aws.seoul
-  bgp_asn    = var.azure_bgp_asn
-  ip_address = var.azure_vpn_gateway_ip
-  type       = "ipsec.1"
-
-  tags = {
-    Name        = "azure-dr-cgw"
-    Environment = "DR"
-    Purpose     = "Azure DR VPN Connection"
-  }
-}
-
-# VPN Connection to Azure
-resource "aws_vpn_connection" "seoul_to_azure" {
-  count               = var.enable_azure_dr ? 1 : 0
-  provider            = aws.seoul
-  transit_gateway_id  = aws_ec2_transit_gateway.main.id
-  customer_gateway_id = aws_customer_gateway.azure_dr[0].id
-  type                = "ipsec.1"
-  static_routes_only  = false # BGP 사용
-
-  # Tunnel 1 옵션 - Azure VPN Gateway 호환
-  tunnel1_ike_versions                  = ["ikev2"]
-  tunnel1_phase1_encryption_algorithms  = ["AES256"]
-  tunnel1_phase1_integrity_algorithms   = ["SHA2-256"]
-  tunnel1_phase1_dh_group_numbers       = [14]
-  tunnel1_phase2_encryption_algorithms  = ["AES256"]
-  tunnel1_phase2_integrity_algorithms   = ["SHA2-256"]
-  tunnel1_phase2_dh_group_numbers       = [14]
-  tunnel1_dpd_timeout_seconds           = 30
-  tunnel1_preshared_key                 = var.azure_vpn_shared_key
-
-  # Tunnel 2 옵션 - Azure VPN Gateway 호환
-  tunnel2_ike_versions                  = ["ikev2"]
-  tunnel2_phase1_encryption_algorithms  = ["AES256"]
-  tunnel2_phase1_integrity_algorithms   = ["SHA2-256"]
-  tunnel2_phase1_dh_group_numbers       = [14]
-  tunnel2_phase2_encryption_algorithms  = ["AES256"]
-  tunnel2_phase2_integrity_algorithms   = ["SHA2-256"]
-  tunnel2_phase2_dh_group_numbers       = [14]
-  tunnel2_dpd_timeout_seconds           = 30
-  tunnel2_preshared_key                 = var.azure_vpn_shared_key
-
-  tags = {
-    Name        = "seoul-to-azure-vpn"
-    Environment = "DR"
-  }
-
-  # Azure VPN Gateway가 먼저 생성되어야 함
   lifecycle {
-    create_before_destroy = false
+    ignore_changes = [tags]
   }
 }
 
-# Transit Gateway Route for Azure VNet
-resource "aws_ec2_transit_gateway_route" "azure_vnet" {
-  count                          = var.enable_azure_dr ? 1 : 0
-  provider                       = aws.seoul
-  destination_cidr_block         = var.azure_vnet_cidr
-  transit_gateway_attachment_id  = aws_vpn_connection.seoul_to_azure[0].transit_gateway_attachment_id
-  transit_gateway_route_table_id = aws_ec2_transit_gateway.main.association_default_route_table_id
 
-  depends_on = [aws_vpn_connection.seoul_to_azure]
-}
-
-# Seoul Private 서브넷에서 Azure로 가는 라우트
-resource "aws_route" "seoul_private_to_azure" {
-  count                  = var.enable_azure_dr ? 1 : 0
-  provider               = aws.seoul
-  route_table_id         = data.terraform_remote_state.global_vpc.outputs.seoul_private_route_table_id
-  destination_cidr_block = var.azure_vnet_cidr
-  transit_gateway_id     = aws_ec2_transit_gateway.main.id
-
-  depends_on = [
-    aws_ec2_transit_gateway_vpc_attachment.seoul,
-    aws_vpn_connection.seoul_to_azure
-  ]
-}

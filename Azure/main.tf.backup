@@ -21,6 +21,7 @@ terraform {
 }
 
 provider "azurerm" {
+  # Resource Provider 자동 등록 비활성화 (타임아웃 방지)
   skip_provider_registration = true
   
   features {
@@ -42,6 +43,7 @@ provider "aws" {
 
 # ===== Data Sources =====
 
+# Seoul Terraform State (AWS VPN 정보 가져오기)
 data "terraform_remote_state" "seoul" {
   backend = "s3"
   config = {
@@ -51,6 +53,7 @@ data "terraform_remote_state" "seoul" {
   }
 }
 
+# AWS Aurora 정보 가져오기
 data "terraform_remote_state" "aurora" {
   backend = "s3"
   config = {
@@ -60,6 +63,7 @@ data "terraform_remote_state" "aurora" {
   }
 }
 
+# AWS Route53 정보 가져오기
 data "terraform_remote_state" "route53" {
   backend = "s3"
   config = {
@@ -88,7 +92,7 @@ resource "azurerm_virtual_network" "dr" {
   name                = var.vnet_name
   location            = azurerm_resource_group.dr.location
   resource_group_name = azurerm_resource_group.dr.name
-  address_space       = var.vnet_address_space
+  address_space       = [var.vnet_address_space]
 
   tags = {
     Environment = "DR"
@@ -132,13 +136,13 @@ resource "azurerm_subnet" "db" {
 
 # Subnet for VPN Gateway
 resource "azurerm_subnet" "gateway" {
-  name                 = "GatewaySubnet"
+  name                 = "GatewaySubnet" # 이름은 반드시 GatewaySubnet
   resource_group_name  = azurerm_resource_group.dr.name
   virtual_network_name = azurerm_virtual_network.dr.name
   address_prefixes     = [var.gateway_subnet_cidr]
 }
 
-# ===== Network Security Groups =====
+# ===== Azure Network Security Groups =====
 
 resource "azurerm_network_security_group" "app" {
   name                = "app-nsg"
@@ -199,7 +203,7 @@ resource "azurerm_network_security_group" "db" {
     protocol                   = "Tcp"
     source_port_range          = "*"
     destination_port_range     = "3306"
-    source_address_prefixes    = ["20.0.0.0/16", "40.0.0.0/16"]
+    source_address_prefixes    = ["20.0.0.0/16", "40.0.0.0/16"] # AWS VPCs
     destination_address_prefix = "*"
   }
 
@@ -218,215 +222,173 @@ resource "azurerm_subnet_network_security_group_association" "db" {
   network_security_group_id = azurerm_network_security_group.db.id
 }
 
-# ===== Module: DMS Integration (MySQL for AWS DMS) =====
+# ===== Azure MySQL Flexible Server (DR Database) =====
 
-module "dms_integration" {
-  source = "./modules/dms-integration"
-
+# Private DNS Zone for MySQL Flexible Server
+resource "azurerm_private_dns_zone" "mysql" {
+  name                = "mysql-dr-multicloud.private.mysql.database.azure.com"
   resource_group_name = azurerm_resource_group.dr.name
-  location            = azurerm_resource_group.dr.location
-
-  mysql_server_name      = var.mysql_server_name
-  mysql_admin_username   = var.mysql_admin_username
-  mysql_admin_password   = var.mysql_admin_password
-  mysql_sku_name         = var.mysql_sku_name
-  mysql_storage_gb       = var.mysql_storage_gb
-  database_name          = var.mysql_database_name
-
-  db_subnet_id = azurerm_subnet.db.id
-  vnet_id      = azurerm_virtual_network.dr.id
-
-  private_dns_zone_name = "mysql-dr-multicloud.private.mysql.database.azure.com"
-  aws_vpc_cidr_start    = "20.0.0.0"
-  aws_vpc_cidr_end      = "20.255.255.255"
 
   tags = {
     Environment = "DR"
-    Purpose     = "DMS Target Database"
+  }
+}
+
+# Link Private DNS Zone to VNet
+resource "azurerm_private_dns_zone_virtual_network_link" "mysql" {
+  name                  = "mysql-dns-vnet-link"
+  resource_group_name   = azurerm_resource_group.dr.name
+  private_dns_zone_name = azurerm_private_dns_zone.mysql.name
+  virtual_network_id    = azurerm_virtual_network.dr.id
+  registration_enabled  = false
+
+  tags = {
+    Environment = "DR"
+  }
+}
+
+resource "azurerm_mysql_flexible_server" "dr" {
+  name                   = var.mysql_server_name
+  resource_group_name    = azurerm_resource_group.dr.name
+  location               = azurerm_resource_group.dr.location
+  administrator_login    = var.mysql_admin_username
+  administrator_password = var.mysql_admin_password
+  backup_retention_days  = 7
+  delegated_subnet_id    = azurerm_subnet.db.id
+  private_dns_zone_id    = azurerm_private_dns_zone.mysql.id
+  sku_name               = var.mysql_sku_name
+  version                = "8.0.21"
+
+  storage {
+    auto_grow_enabled = true
+    size_gb           = var.mysql_storage_gb
+    iops              = 360
+  }
+
+  maintenance_window {
+    day_of_week  = 0
+    start_hour   = 3
+    start_minute = 0
+  }
+
+  tags = {
+    Environment = "DR"
+    Purpose     = "Aurora Replica for DR via DMS"
   }
 
   depends_on = [
     azurerm_subnet.db,
-    azurerm_virtual_network.dr
+    azurerm_private_dns_zone_virtual_network_link.mysql
   ]
 }
 
-# ===== Module: ECR App Service =====
-# NOTE: ECR App Service는 별도 배포 필요
-# 위치: Azure/deployments/ecr-appservice/
-# 사용법: cd deployments/ecr-appservice && terraform init && terraform apply
+resource "azurerm_mysql_flexible_database" "webapp" {
+  name                = var.mysql_database_name
+  resource_group_name = azurerm_resource_group.dr.name
+  server_name         = azurerm_mysql_flexible_server.dr.name
+  charset             = "utf8mb4"
+  collation           = "utf8mb4_unicode_ci"
+}
 
-# module "ecr_appservice" {
-#   source = "./modules/ecr-appservice"
-#
-#   resource_group_name    = azurerm_resource_group.dr.name
-#   location               = azurerm_resource_group.dr.location
-#   app_service_plan_name  = var.app_service_plan_name
-#   app_service_sku        = var.app_service_sku
-#   web_app_name           = var.web_app_name
-#
-#   # ECR 설정
-#   ecr_registry_url = var.ecr_registry_url
-#   ecr_image_name   = var.ecr_image_name
-#   ecr_username     = var.ecr_username
-#   ecr_password     = var.ecr_password
-#
-#   # VNet 통합
-#   vnet_integration_enabled = true
-#   app_subnet_id            = azurerm_subnet.app.id
-#
-#   # 데이터베이스 연결
-#   database_connection_enabled = true
-#   db_host                     = module.dms_integration.mysql_server_fqdn
-#   db_name                     = module.dms_integration.database_name
-#   db_user                     = var.mysql_admin_username
-#   db_password                 = var.mysql_admin_password
-#   db_port                     = "3306"
-#
-#   tags = {
-#     Environment = "DR"
-#     Purpose     = "DR Web Application with ECR"
-#   }
-#
-#   depends_on = [
-#     module.dms_integration,
-#     azurerm_subnet.app
-#   ]
-# }
+# AWS DMS를 위한 방화벽 규칙 (VPN을 통한 Private IP)
+resource "azurerm_mysql_flexible_server_firewall_rule" "aws_vpn" {
+  name                = "AllowAWSVPN"
+  resource_group_name = azurerm_resource_group.dr.name
+  server_name         = azurerm_mysql_flexible_server.dr.name
+  start_ip_address    = "20.0.0.0"  # AWS Seoul VPC CIDR 시작
+  end_ip_address      = "20.255.255.255"  # AWS Seoul VPC CIDR 끝
+}
 
-# ===== Module: Route53 Health Check =====
-# NOTE: ECR App Service 배포 후 endpoint_fqdn을 수동으로 설정하세요
+# Azure Services 접근 허용
+resource "azurerm_mysql_flexible_server_firewall_rule" "azure_services" {
+  name                = "AllowAzureServices"
+  resource_group_name = azurerm_resource_group.dr.name
+  server_name         = azurerm_mysql_flexible_server.dr.name
+  start_ip_address    = "0.0.0.0"
+  end_ip_address      = "0.0.0.0"
+}
 
-# module "route53_healthcheck" {
-#   source = "./modules/route53-healthcheck"
-#
-#   providers = {
-#     aws = aws.seoul
-#   }
-#
-#   endpoint_fqdn      = "webapp-dr-multicloud.azurewebsites.net"  # ECR App Service 배포 후 업데이트
-#   endpoint_port      = 443
-#   health_check_type  = "HTTPS"
-#   health_check_path  = "/health"
-#   health_check_name  = "azure-dr-health-check"
-#   
-#   alarm_name        = "azure-dr-endpoint-unhealthy"
-#   alarm_description = "Alert when Azure DR endpoint is unhealthy"
-#
-#   enable_latency_alarm = true
-#   latency_threshold_ms = 1000
-#
-#   tags = {
-#     Environment = "DR"
-#     Target      = "Azure"
-#   }
-# }
+# ===== Azure App Service (DR Application) =====
 
-# ===== Module: AWS DMS Migration (Aurora → Azure MySQL) =====
-
-module "aws_dms_migration" {
-  source = "./modules/aws-dms-migration"
-
-  providers = {
-    aws = aws.seoul
-  }
-
-  terraform_state_bucket = "terraform-s3-cheonsangyeon"
-  aws_region             = "ap-northeast-2"
-
-  # Source (Aurora)
-  source_database_name = "globaldb"  # Aurora target 엔드포인트에 설정된 DB
-  source_username      = "admin"
-  source_password      = "AdminPassword123!"
-
-  # Target (Azure MySQL)
-  azure_mysql_endpoint = module.dms_integration.mysql_server_fqdn
-  target_database_name = "globaldb"  # Azure MySQL 대상 DB
-  target_username      = var.mysql_admin_username
-  target_password      = var.mysql_admin_password
-
-  # Migration settings
-  migration_type       = "full-load"
-  transform_schema     = false  # 스키마 변환 없이 그대로 복제
-  auto_start_migration = var.enable_auto_dms_migration
+resource "azurerm_service_plan" "dr" {
+  name                = var.app_service_plan_name
+  location            = azurerm_resource_group.dr.location
+  resource_group_name = azurerm_resource_group.dr.name
+  os_type             = "Linux"
+  sku_name            = var.app_service_sku
 
   tags = {
     Environment = "DR"
-    Purpose     = "Aurora to Azure MySQL Migration"
   }
-
-  depends_on = [
-    module.dms_integration
-  ]
 }
 
-# ===== Module: AWS VPN Connection (Azure → Seoul Transit Gateway) =====
+resource "azurerm_linux_web_app" "dr" {
+  name                = var.web_app_name
+  location            = azurerm_resource_group.dr.location
+  resource_group_name = azurerm_resource_group.dr.name
+  service_plan_id     = azurerm_service_plan.dr.id
 
-module "aws_vpn_connection" {
-  source = "./modules/aws-vpn-connection"
+  site_config {
+    always_on         = true
+    health_check_path = "/health"
+    
+    # ECR 컨테이너 이미지 사용
+    application_stack {
+      docker_registry_url      = "https://${var.ecr_registry_url}"
+      docker_image_name        = var.ecr_image_name
+      docker_registry_username = var.ecr_username
+      docker_registry_password = var.ecr_password
+    }
 
-  providers = {
-    aws = aws.seoul
+    vnet_route_all_enabled = true
   }
 
-  # Seoul State 정보
-  seoul_state_bucket = "terraform-s3-cheonsangyeon"
-  seoul_state_key    = "terraform/seoul/terraform.tfstate"
-
-  # Azure VPN Gateway 정보
-  azure_vpn_gateway_ip = azurerm_public_ip.vpn_gateway.ip_address
-  azure_bgp_asn        = 65515
-  azure_vnet_cidr      = var.vnet_address_space[0]
-  azure_vpn_shared_key = var.vpn_shared_key
-
-  depends_on = [
-    azurerm_virtual_network_gateway.vpn
-  ]
-}
-
-# ===== Module: Route53 DNS Records for Azure =====
-
-module "route53_records" {
-  source = "./modules/route53-records"
-
-  providers = {
-    aws = aws.seoul
+  app_settings = {
+    "WEBSITES_ENABLE_APP_SERVICE_STORAGE" = "false"
+    "WEBSITE_DNS_SERVER"                  = "168.63.129.16"
+    "DOCKER_ENABLE_CI"                    = "true"
+    
+    # Application settings
+    "NODE_ENV"           = "production"
+    "DR_MODE"            = "true"
+    "PRIMARY_REGION"     = "AWS"
+    "FAILOVER_ENABLED"   = "true"
+    
+    # Database connection (Azure MySQL Flexible Server)
+    "DB_HOST"     = azurerm_mysql_flexible_server.dr.fqdn
+    "DB_NAME"     = var.mysql_database_name
+    "DB_USER"     = var.mysql_admin_username
+    "DB_PASSWORD" = var.mysql_admin_password
+    "DB_PORT"     = "3306"
+    
+    # ECR Registry
+    "DOCKER_REGISTRY_SERVER_URL"      = "https://${var.ecr_registry_url}"
+    "DOCKER_REGISTRY_SERVER_USERNAME" = var.ecr_username
+    "DOCKER_REGISTRY_SERVER_PASSWORD" = var.ecr_password
   }
 
-  terraform_state_bucket = "terraform-s3-cheonsangyeon"
+  virtual_network_subnet_id = azurerm_subnet.app.id
 
-  # DNS 레코드 설정
-  create_dns_record   = var.create_azure_dns_record
-  subdomain_name      = "azure.${data.terraform_remote_state.route53.outputs.domain_name}"
-  azure_endpoint_fqdn = "webapp-dr-multicloud.azurewebsites.net"  # ECR App Service 배포 후 업데이트
-  ttl                 = 300
-
-  # Failover 라우팅 (선택사항)
-  enable_failover_routing  = var.enable_failover_routing
-  failover_subdomain       = "app.${data.terraform_remote_state.route53.outputs.domain_name}"
-  primary_endpoint_fqdn    = data.terraform_remote_state.route53.outputs.cloudfront_url
-  primary_health_check_id  = data.terraform_remote_state.route53.outputs.health_checks.seoul
-  # ECR App Service 별도 배포로 인해 주석 처리
-  # secondary_health_check_id = module.route53_healthcheck.health_check_id
+  https_only = true
 
   tags = {
     Environment = "DR"
-    Purpose     = "Azure DR DNS Records"
+    Purpose     = "DR Web Application"
   }
 
   depends_on = [
-    azurerm_subnet.app
+    azurerm_service_plan.dr
   ]
 }
 
-# ===== Azure Storage Account =====
+# ===== Azure Storage Account (for backups and static assets) =====
 
 resource "azurerm_storage_account" "dr" {
   name                     = var.storage_account_name
   resource_group_name      = azurerm_resource_group.dr.name
   location                 = azurerm_resource_group.dr.location
   account_tier             = "Standard"
-  account_replication_type = "GRS"
+  account_replication_type = "GRS" # Geo-Redundant for DR
   account_kind             = "StorageV2"
 
   blob_properties {
@@ -459,7 +421,7 @@ resource "azurerm_storage_container" "assets" {
   container_access_type = "blob"
 }
 
-# ===== Azure VPN Gateway =====
+# ===== Azure VPN Gateway (for AWS-Azure connectivity) =====
 
 resource "azurerm_public_ip" "vpn_gateway" {
   name                = "vpn-gateway-pip"
@@ -483,9 +445,10 @@ resource "azurerm_virtual_network_gateway" "vpn" {
   vpn_type = "RouteBased"
 
   active_active = false
-  enable_bgp    = false
+  enable_bgp    = false # AWS APIPA \ubc94\uc704 \ubd88\uc77c\uce58\ub85c BGP \ube44\ud65c\uc131\ud654
   sku           = var.vpn_gateway_sku
 
+  # 명시적 종속성 추가
   depends_on = [
     azurerm_subnet.gateway,
     azurerm_virtual_network.dr,
@@ -499,33 +462,43 @@ resource "azurerm_virtual_network_gateway" "vpn" {
     subnet_id                     = azurerm_subnet.gateway.id
   }
 
+  # BGP \ube44\ud65c\uc131\ud654 (AWS APIPA \ubc94\uc704 \ubd88\uc77c\uce58)
+  # bgp_settings {
+  #   asn = var.azure_bgp_asn
+  # }
+
   tags = {
     Environment = "DR"
     Purpose     = "AWS-Azure VPN Connection"
   }
 }
 
+# Local Network Gateway (AWS 측 정보 - Seoul State에서 자동으로 가져오기)
 resource "azurerm_local_network_gateway" "aws_seoul" {
   name                = "aws-seoul-lng"
   location            = azurerm_resource_group.dr.location
   resource_group_name = azurerm_resource_group.dr.name
   
-  # AWS VPN Tunnel 1 IP (from VPN module)
-  gateway_address = module.aws_vpn_connection.tunnel_1_address
+  # AWS VPN Tunnel 1 IP (3.39.70.44 - vpn-0d25ac381ee624408)
+  gateway_address = try(
+    data.terraform_remote_state.seoul.outputs.azure_vpn_tunnel_addresses.tunnel_1_address,
+    "3.39.70.44"  # Fallback to latest VPN Tunnel 1 IP
+  )
   
-  # Seoul VPC CIDR
-  address_space = ["20.0.0.0/16"]
+  address_space = ["20.0.0.0/16"] # AWS Seoul VPC CIDR
+
+  # BGP \ube44\ud65c\uc131\ud654\ub85c Static Route \uc0ac\uc6a9 (\ud638\ud658\uc131 \ubb38\uc81c)
+  # bgp_settings {
+  #   asn = ...
+  #   bgp_peering_address = ...
+  # }
 
   tags = {
     Environment = "DR"
-    ManagedBy   = "Terraform-Azure-Module"
   }
-
-  depends_on = [
-    module.aws_vpn_connection
-  ]
 }
 
+# VPN Connection
 resource "azurerm_virtual_network_gateway_connection" "aws_azure" {
   name                = "aws-azure-vpn-connection"
   location            = azurerm_resource_group.dr.location
@@ -536,7 +509,7 @@ resource "azurerm_virtual_network_gateway_connection" "aws_azure" {
   local_network_gateway_id   = azurerm_local_network_gateway.aws_seoul.id
 
   shared_key = var.vpn_shared_key
-  enable_bgp = false
+  enable_bgp = false # AWS APIPA \ubc94\uc704 \ubd88\uc77c\uce58\ub85c BGP \ube44\ud65c\uc131\ud654
 
   ipsec_policy {
     dh_group         = "DHGroup14"
@@ -544,8 +517,8 @@ resource "azurerm_virtual_network_gateway_connection" "aws_azure" {
     ike_integrity    = "SHA256"
     ipsec_encryption = "AES256"
     ipsec_integrity  = "SHA256"
-    pfs_group        = "PFS14"
-    sa_lifetime      = 3600
+    pfs_group        = "PFS14"        # AWS VPN과 일치
+    sa_lifetime      = 3600           # AWS 기본값
   }
 
   tags = {
@@ -558,6 +531,7 @@ resource "azurerm_virtual_network_gateway_connection" "aws_azure" {
     azurerm_local_network_gateway.aws_seoul
   ]
 
+  # AWS VPN 재생성 시 Connection도 재생성
   lifecycle {
     replace_triggered_by = [
       azurerm_local_network_gateway.aws_seoul.gateway_address
@@ -582,20 +556,49 @@ resource "azurerm_monitor_action_group" "dr_alerts" {
   }
 }
 
-# NOTE: ECR App Service 배포 후 활성화
-# resource "azurerm_monitor_metric_alert" "app_down" {
-#   name                = "app-service-down-alert"
+# App Service availability alert
+resource "azurerm_monitor_metric_alert" "app_down" {
+  name                = "app-service-down-alert"
+  resource_group_name = azurerm_resource_group.dr.name
+  scopes              = [azurerm_linux_web_app.dr.id]
+  description         = "Alert when DR app service is down"
+  severity            = 0
+
+  criteria {
+    metric_namespace = "Microsoft.Web/sites"
+    metric_name      = "HealthCheckStatus"
+    aggregation      = "Average"
+    operator         = "LessThan"
+    threshold        = 50
+  }
+
+  frequency   = "PT1M"
+  window_size = "PT5M"
+
+  action {
+    action_group_id = azurerm_monitor_action_group.dr_alerts.id
+  }
+
+  tags = {
+    Environment = "DR"
+  }
+}
+
+# Database availability alert
+# MySQL 할당량 부족으로 DB Alert 비활성화
+# resource "azurerm_monitor_metric_alert" "db_down" {
+#   name                = "mysql-server-down-alert"
 #   resource_group_name = azurerm_resource_group.dr.name
-#   scopes              = ["/subscriptions/92248bea-a019-4629-92b9-4db0e2ecab1b/resourceGroups/rg-dr-multicloud/providers/Microsoft.Web/sites/webapp-dr-multicloud"]
-#   description         = "Alert when DR app service is down"
+#   scopes              = [azurerm_mysql_flexible_server.dr.id]
+#   description         = "Alert when DR MySQL server is unavailable"
 #   severity            = 0
 #
 #   criteria {
-#     metric_namespace = "Microsoft.Web/sites"
-#     metric_name      = "HealthCheckStatus"
+#     metric_namespace = "Microsoft.DBforMySQL/flexibleServers"
+#     metric_name      = "cpu_percent"
 #     aggregation      = "Average"
-#     operator         = "LessThan"
-#     threshold        = 50
+#     operator         = "GreaterThan"
+#     threshold        = 90
 #   }
 #
 #   frequency   = "PT1M"
@@ -609,3 +612,44 @@ resource "azurerm_monitor_action_group" "dr_alerts" {
 #     Environment = "DR"
 #   }
 # }
+
+# ===== AWS Route53 Health Check for DR =====
+
+# Route53 Health Check for Azure App Service
+resource "aws_route53_health_check" "azure_dr" {
+  provider          = aws.seoul
+  fqdn              = azurerm_linux_web_app.dr.default_hostname
+  port              = 443
+  type              = "HTTPS"
+  resource_path     = "/health"
+  failure_threshold = 3
+  request_interval  = 30
+
+  tags = {
+    Name        = "azure-dr-health-check"
+    Environment = "DR"
+  }
+}
+
+# CloudWatch Alarm for Azure DR health
+resource "aws_cloudwatch_metric_alarm" "azure_dr_unhealthy" {
+  provider            = aws.seoul
+  alarm_name          = "azure-dr-endpoint-unhealthy"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "HealthCheckStatus"
+  namespace           = "AWS/Route53"
+  period              = 60
+  statistic           = "Minimum"
+  threshold           = 1
+  alarm_description   = "This metric monitors Azure DR endpoint health"
+  treat_missing_data  = "breaching"
+
+  dimensions = {
+    HealthCheckId = aws_route53_health_check.azure_dr.id
+  }
+
+  tags = {
+    Environment = "DR"
+  }
+}

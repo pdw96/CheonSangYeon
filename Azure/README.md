@@ -403,6 +403,84 @@ az appservice plan update \
   --number-of-workers 3
 ```
 
+## 모듈 구조
+
+Azure 배포는 AWS와의 자동 연동을 위해 모듈화되어 있습니다:
+
+### AWS 연동 모듈
+
+#### 1. `modules/aws-vpn-connection/`
+**목적**: Azure 배포 시 AWS Seoul Transit Gateway와 VPN 자동 연결
+
+**기능**:
+- AWS Customer Gateway 생성 (Azure VPN Gateway IP 사용)
+- Site-to-Site VPN Connection 생성
+- Transit Gateway Route 추가 (Azure VNet CIDR)
+- Seoul VPC Route 추가 (Azure로 라우팅)
+
+**사용법**:
+```hcl
+module "aws_vpn_connection" {
+  source = "./modules/aws-vpn-connection"
+  
+  seoul_state_bucket   = "terraform-s3-cheonsangyeon"
+  azure_vpn_gateway_ip = azurerm_public_ip.vpn_gateway.ip_address
+  azure_vpn_shared_key = var.vpn_shared_key
+}
+```
+
+#### 2. `modules/aws-dms-migration/`
+**목적**: Aurora MySQL → Azure MySQL 자동 마이그레이션
+
+**기능**:
+- DMS Endpoint 생성 (Azure MySQL 타겟)
+- Replication Task 생성 (Aurora → Azure)
+- Security Group 규칙 자동 구성
+- 마이그레이션 모니터링
+
+#### 3. `modules/route53-healthcheck/`
+**목적**: Azure App Service에 대한 Route53 헬스체크
+
+**기능**:
+- Azure App Service 엔드포인트 모니터링
+- 장애 감지 및 알림
+- Failover 라우팅 지원
+
+#### 4. `modules/route53-records/`
+**목적**: Azure 엔드포인트에 대한 DNS 레코드 자동 생성
+
+**기능**:
+- Azure 서브도메인 레코드 생성
+- Failover 라우팅 설정 (Primary: AWS, Secondary: Azure)
+- Health Check 기반 자동 전환
+
+#### 5. `modules/dms-integration/`
+**목적**: Azure MySQL Flexible Server를 DMS 타겟으로 구성
+
+**기능**:
+- MySQL Flexible Server 생성
+- DMS 호환 설정 (binlog, gtid 등)
+- VNet 통합 및 방화벽 규칙
+
+#### 6. `modules/ecr-appservice/`
+**목적**: AWS ECR 컨테이너로 Azure App Service 배포
+
+**기능**:
+- ECR Pull 권한 설정
+- App Service 컨테이너 설정
+- VNet 통합
+
+### 모듈 호출 순서
+
+```
+1. dms-integration       → Azure MySQL 생성
+2. aws-dms-migration     → Aurora → Azure 마이그레이션 시작
+3. ecr-appservice        → ECR 이미지로 App Service 배포
+4. aws-vpn-connection    → AWS VPN 연결 자동 구성
+5. route53-healthcheck   → Azure 헬스체크 설정
+6. route53-records       → DNS 레코드 생성 및 Failover 설정
+```
+
 ## 보안 권장사항
 
 1. **VPN 공유 키**: 강력한 키 사용 (32자 이상)

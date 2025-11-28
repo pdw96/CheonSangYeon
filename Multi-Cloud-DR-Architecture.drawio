@@ -1,0 +1,267 @@
+<mxfile host="65bd71144e">
+    <diagram id="complete-infrastructure" name="Complete Multi-Cloud Infrastructure">
+        <mxGraphModel dx="2400" dy="1400" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2200" pageHeight="1600" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                
+                <!-- Title -->
+                <mxCell id="title" value="Multi-Cloud Hybrid Infrastructure&#xa;AWS Seoul + Tokyo + IDC + Azure DR" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=1" vertex="1" parent="1">
+                    <mxGeometry x="200" y="10" width="800" height="50" as="geometry"/>
+                </mxCell>
+                
+                <!-- AWS Cloud Container -->
+                <mxCell id="aws-cloud" value="AWS Cloud - Seoul Region (ap-northeast-2)" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=14;fontStyle=1;container=1;pointerEvents=0;collapsible=0;recursiveResize=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_aws_cloud;strokeColor=#232F3E;fillColor=#E3F2FD;verticalAlign=top;align=left;spacingLeft=30;fontColor=#232F3E;dashed=0;" vertex="1" parent="1">
+                    <mxGeometry x="20" y="80" width="520" height="650" as="geometry"/>
+                </mxCell>
+                
+                <!-- Seoul VPC -->
+                <mxCell id="seoul-vpc" value="VPC: vpc-08e573a4900e530d3&#xa;20.0.0.0/16" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=12;fontStyle=0;container=1;pointerEvents=0;collapsible=0;recursiveResize=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_vpc;strokeColor=#248823;fillColor=#E8F5E9;verticalAlign=top;align=left;spacingLeft=30;fontColor=#000000;dashed=0;" vertex="1" parent="aws-cloud">
+                    <mxGeometry x="20" y="40" width="480" height="460" as="geometry"/>
+                </mxCell>
+                
+                <!-- Availability Zone A -->
+                <mxCell id="az-a" value="Availability Zone A (ap-northeast-2a)" style="fillColor=#FFF3E0;strokeColor=#F57C00;dashed=1;verticalAlign=top;fontStyle=0;fontColor=#000000;fontSize=11;" vertex="1" parent="seoul-vpc">
+                    <mxGeometry x="20" y="40" width="200" height="400" as="geometry"/>
+                </mxCell>
+                
+                <!-- Public Subnet AZ-A -->
+                <mxCell id="public-subnet-a" value="Public NAT Subnet&#xa;20.0.0.0/24" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=10;fontStyle=0;container=1;pointerEvents=0;collapsible=0;recursiveResize=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_security_group;grStroke=0;strokeColor=#82B366;fillColor=#D5E8D4;verticalAlign=top;align=left;spacingLeft=30;fontColor=#000000;dashed=0;" vertex="1" parent="az-a">
+                    <mxGeometry x="10" y="30" width="180" height="100" as="geometry"/>
+                </mxCell>
+                
+                <!-- NAT Gateway A -->
+                <mxCell id="nat-a" value="NAT GW A" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#4D27AA;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.nat_gateway;" vertex="1" parent="public-subnet-a">
+                    <mxGeometry x="20" y="30" width="40" height="40" as="geometry"/>
+                </mxCell>
+                
+                <!-- ALB -->
+                <mxCell id="alb" value="ALB" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#4D27AA;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.application_load_balancer;" vertex="1" parent="public-subnet-a">
+                    <mxGeometry x="100" y="30" width="40" height="40" as="geometry"/>
+                </mxCell>
+                
+                <!-- Private Subnet AZ-A -->
+                <mxCell id="private-subnet-a" value="Private Beanstalk Subnet&#xa;20.0.2.0/24" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=10;fontStyle=0;container=1;pointerEvents=0;collapsible=0;recursiveResize=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_security_group;grStroke=0;strokeColor=#D6B656;fillColor=#FFF2CC;verticalAlign=top;align=left;spacingLeft=30;fontColor=#000000;dashed=0;" vertex="1" parent="az-a">
+                    <mxGeometry x="10" y="150" width="180" height="180" as="geometry"/>
+                </mxCell>
+                
+                <!-- Beanstalk EC2 A -->
+                <mxCell id="ec2-a" value="Beanstalk EC2&#xa;t3.medium" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#ED7100;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.ec2_instance;" vertex="1" parent="private-subnet-a">
+                    <mxGeometry x="20" y="30" width="40" height="40" as="geometry"/>
+                </mxCell>
+                
+                <!-- Aurora -->
+                <mxCell id="aurora" value="Aurora Primary&#xa;db.r6g.large" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#C925D1;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.aurora_instance;" vertex="1" parent="private-subnet-a">
+                    <mxGeometry x="20" y="100" width="40" height="40" as="geometry"/>
+                </mxCell>
+                
+                <!-- TGW Subnet AZ-A -->
+                <mxCell id="tgw-subnet-a" value="TGW Subnet&#xa;20.0.4.0/24" style="fillColor=#E1D5E7;strokeColor=#9673A6;dashed=0;verticalAlign=top;fontStyle=0;fontColor=#000000;fontSize=10;" vertex="1" parent="az-a">
+                    <mxGeometry x="10" y="310" width="180" height="70" as="geometry"/>
+                </mxCell>
+                
+                <!-- Availability Zone C -->
+                <mxCell id="az-c" value="Availability Zone C (ap-northeast-2c)" style="fillColor=#FFF3E0;strokeColor=#F57C00;dashed=1;verticalAlign=top;fontStyle=0;fontColor=#000000;fontSize=11;" vertex="1" parent="seoul-vpc">
+                    <mxGeometry x="260" y="40" width="200" height="400" as="geometry"/>
+                </mxCell>
+                
+                <!-- Public Subnet AZ-C -->
+                <mxCell id="public-subnet-c" value="Public NAT Subnet&#xa;20.0.1.0/24" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=10;fontStyle=0;container=1;pointerEvents=0;collapsible=0;recursiveResize=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_security_group;grStroke=0;strokeColor=#82B366;fillColor=#D5E8D4;verticalAlign=top;align=left;spacingLeft=30;fontColor=#000000;dashed=0;" vertex="1" parent="az-c">
+                    <mxGeometry x="10" y="30" width="180" height="100" as="geometry"/>
+                </mxCell>
+                
+                <!-- NAT Gateway C -->
+                <mxCell id="nat-c" value="NAT GW C" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#4D27AA;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.nat_gateway;" vertex="1" parent="public-subnet-c">
+                    <mxGeometry x="70" y="30" width="40" height="40" as="geometry"/>
+                </mxCell>
+                
+                <!-- Private Subnet AZ-C -->
+                <mxCell id="private-subnet-c" value="Private Beanstalk Subnet&#xa;20.0.3.0/24" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=10;fontStyle=0;container=1;pointerEvents=0;collapsible=0;recursiveResize=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_security_group;grStroke=0;strokeColor=#D6B656;fillColor=#FFF2CC;verticalAlign=top;align=left;spacingLeft=30;fontColor=#000000;dashed=0;" vertex="1" parent="az-c">
+                    <mxGeometry x="10" y="150" width="180" height="120" as="geometry"/>
+                </mxCell>
+                
+                <!-- Beanstalk EC2 C -->
+                <mxCell id="ec2-c" value="Beanstalk EC2&#xa;t3.medium" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#ED7100;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.ec2_instance;" vertex="1" parent="private-subnet-c">
+                    <mxGeometry x="70" y="30" width="40" height="40" as="geometry"/>
+                </mxCell>
+                
+                <!-- Transit Gateway -->
+                <mxCell id="tgw" value="Transit Gateway&#xa;tgw-0645318fdde116ec0" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#4D27AA;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.transit_gateway;" vertex="1" parent="aws-cloud">
+                    <mxGeometry x="240" y="530" width="40" height="40" as="geometry"/>
+                </mxCell>
+                
+                <!-- Internet Gateway -->
+                <mxCell id="igw" value="Internet&#xa;Gateway" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#4D27AA;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;fontStyle=0;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.internet_gateway;" vertex="1" parent="aws-cloud">
+                    <mxGeometry x="440" y="40" width="40" height="40" as="geometry"/>
+                </mxCell>
+                
+                <!-- Seoul IDC VPC -->
+                <mxCell id="seoul-idc-vpc" value="Seoul IDC VPC&#xa;vpc-01c26ae12f8ec9b15&#xa;10.0.0.0/16" style="fillColor=#FFF9C4;strokeColor=#FBC02D;dashed=0;verticalAlign=top;fontStyle=1;fontColor=#000000;fontSize=11;spacingLeft=20;" vertex="1" parent="1">
+                    <mxGeometry x="20" y="760" width="250" height="200" as="geometry"/>
+                </mxCell>
+                
+                <!-- Seoul IDC Public Subnet -->
+                <mxCell id="seoul-idc-subnet" value="Public Subnet&#xa;10.0.1.0/24" style="fillColor=#FFFFCC;strokeColor=#E1D084;dashed=0;verticalAlign=top;fontStyle=0;fontColor=#000000;fontSize=10;spacingLeft=15;" vertex="1" parent="seoul-idc-vpc">
+                    <mxGeometry x="15" y="35" width="220" height="150" as="geometry"/>
+                </mxCell>
+                
+                <!-- Seoul CGW -->
+                <mxCell id="seoul-cgw" value="Customer GW&#xa;t3.small&#xa;VPN" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#ED7100;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=9;fontStyle=0;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.ec2_instance;" vertex="1" parent="seoul-idc-subnet">
+                    <mxGeometry x="20" y="30" width="35" height="35" as="geometry"/>
+                </mxCell>
+                
+                <!-- Seoul IDC DB -->
+                <mxCell id="seoul-idc-db" value="MySQL DB&#xa;t3.small" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#C925D1;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=9;fontStyle=0;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.rds_mysql_instance;" vertex="1" parent="seoul-idc-subnet">
+                    <mxGeometry x="120" y="30" width="35" height="35" as="geometry"/>
+                </mxCell>
+                
+                <!-- Seoul IDC IGW -->
+                <mxCell id="seoul-idc-igw" value="IGW" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#4D27AA;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=9;fontStyle=0;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.internet_gateway;" vertex="1" parent="seoul-idc-subnet">
+                    <mxGeometry x="20" y="90" width="30" height="30" as="geometry"/>
+                </mxCell>
+                
+                <!-- Tokyo Region (Deleted) -->
+                <mxCell id="tokyo-cloud" value="AWS Cloud - Tokyo Region (ap-northeast-1) 🔴 DELETED" style="fillColor=#FFE6E6;strokeColor=#CC0000;dashed=1;verticalAlign=top;fontStyle=1;fontColor=#CC0000;fontSize=14;spacingLeft=30;opacity=50;" vertex="1" parent="1">
+                    <mxGeometry x="300" y="760" width="520" height="200" as="geometry"/>
+                </mxCell>
+                
+                <!-- Tokyo Deleted Note -->
+                <mxCell id="tokyo-note" value="Tokyo Region Deleted&#xa;&#xa;• VPC: vpc-06159dc6f94b291b6 (40.0.0.0/16)&#xa;• Transit Gateway: tgw-0c202cb272c772a84&#xa;• Beanstalk Environment&#xa;• Aurora Secondary Cluster&#xa;• Tokyo IDC VPC (30.0.0.0/16)&#xa;&#xa;DR Strategy Changed: AWS Tokyo → Azure Korea Central" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=10;fontColor=#CC0000;fontStyle=2;" vertex="1" parent="tokyo-cloud">
+                    <mxGeometry x="20" y="40" width="480" height="140" as="geometry"/>
+                </mxCell>
+                
+                <!-- Azure Cloud Container -->
+                <mxCell id="azure-cloud" value="Azure Cloud - Korea Central Region" style="fillColor=#E0F7FA;strokeColor=#0097A7;dashed=0;verticalAlign=top;fontStyle=1;fontColor=#000000;fontSize=14;spacingLeft=30;" vertex="1" parent="1">
+                    <mxGeometry x="870" y="80" width="520" height="650" as="geometry"/>
+                </mxCell>
+                
+                <!-- Resource Group -->
+                <mxCell id="rg" value="Resource Group: rg-dr-multicloud" style="fillColor=#F3E5F5;strokeColor=#7B1FA2;dashed=0;verticalAlign=top;fontStyle=1;fontColor=#000000;fontSize=12;spacingLeft=20;" vertex="1" parent="azure-cloud">
+                    <mxGeometry x="20" y="40" width="480" height="590" as="geometry"/>
+                </mxCell>
+                
+                <!-- Azure VNet -->
+                <mxCell id="azure-vnet" value="VNet: vnet-dr-multicloud&#xa;50.0.0.0/16" style="fillColor=#E8F5E9;strokeColor=#388E3C;dashed=0;verticalAlign=top;fontStyle=0;fontColor=#000000;fontSize=11;spacingLeft=20;" vertex="1" parent="rg">
+                    <mxGeometry x="20" y="40" width="440" height="530" as="geometry"/>
+                </mxCell>
+                
+                <!-- Gateway Subnet -->
+                <mxCell id="gateway-subnet" value="Gateway Subnet&#xa;50.0.0.0/24" style="fillColor=#D5E8D4;strokeColor=#82B366;dashed=0;verticalAlign=top;fontStyle=0;fontColor=#000000;fontSize=10;spacingLeft=20;" vertex="1" parent="azure-vnet">
+                    <mxGeometry x="20" y="40" width="400" height="120" as="geometry"/>
+                </mxCell>
+                
+                <!-- VPN Gateway -->
+                <mxCell id="vpn-gateway" value="VPN Gateway&#xa;20.194.99.75" style="aspect=fixed;html=1;points=[];align=center;fontSize=10;image;image=img/lib/azure2/networking/VPN_Gateways.svg;" vertex="1" parent="gateway-subnet">
+                    <mxGeometry x="30" y="30" width="40" height="40" as="geometry"/>
+                </mxCell>
+                
+                <!-- Local Network Gateway -->
+                <mxCell id="lng" value="Local Network GW&#xa;aws-seoul-lgw&#xa;3.39.70.44" style="aspect=fixed;html=1;points=[];align=center;fontSize=10;image;image=img/lib/azure2/networking/Local_Network_Gateways.svg;" vertex="1" parent="gateway-subnet">
+                    <mxGeometry x="120" y="30" width="40" height="40" as="geometry"/>
+                </mxCell>
+                
+                <!-- App Subnet -->
+                <mxCell id="app-subnet" value="App Subnet&#xa;50.0.1.0/24" style="fillColor=#FFF2CC;strokeColor=#D6B656;dashed=0;verticalAlign=top;fontStyle=0;fontColor=#000000;fontSize=10;spacingLeft=20;" vertex="1" parent="azure-vnet">
+                    <mxGeometry x="20" y="180" width="400" height="150" as="geometry"/>
+                </mxCell>
+                
+                <!-- App Service -->
+                <mxCell id="app-service" value="App Service&#xa;webapp-dr-multicloud&#xa;(ECR Container)" style="aspect=fixed;html=1;points=[];align=center;fontSize=10;image;image=img/lib/azure2/app_services/App_Services.svg;" vertex="1" parent="app-subnet">
+                    <mxGeometry x="30" y="40" width="50" height="50" as="geometry"/>
+                </mxCell>
+                
+                <!-- App Service Plan -->
+                <mxCell id="app-plan" value="Plan: P1v3&#xa;Premium" style="aspect=fixed;html=1;points=[];align=center;fontSize=9;image;image=img/lib/azure2/app_services/App_Service_Plans.svg;" vertex="1" parent="app-subnet">
+                    <mxGeometry x="120" y="45" width="35" height="35" as="geometry"/>
+                </mxCell>
+                
+                <!-- DB Subnet -->
+                <mxCell id="db-subnet" value="DB Subnet&#xa;50.0.2.0/24" style="fillColor=#FFE6CC;strokeColor=#D79B00;dashed=0;verticalAlign=top;fontStyle=0;fontColor=#000000;fontSize=10;spacingLeft=20;" vertex="1" parent="azure-vnet">
+                    <mxGeometry x="20" y="350" width="400" height="160" as="geometry"/>
+                </mxCell>
+                
+                <!-- MySQL Server -->
+                <mxCell id="mysql" value="MySQL Flexible&#xa;mysql-dr-multicloud&#xa;50.0.2.4" style="aspect=fixed;html=1;points=[];align=center;fontSize=10;image;image=img/lib/azure2/databases/Azure_Database_MySQL_Server.svg;" vertex="1" parent="db-subnet">
+                    <mxGeometry x="30" y="40" width="48" height="48" as="geometry"/>
+                </mxCell>
+                
+                <!-- Private DNS Zone -->
+                <mxCell id="private-dns" value="Private DNS Zone&#xa;mysql-dr-multicloud.private" style="aspect=fixed;html=1;points=[];align=center;fontSize=9;image;image=img/lib/azure2/networking/Private_DNS_Zones.svg;" vertex="1" parent="db-subnet">
+                    <mxGeometry x="120" y="45" width="35" height="35" as="geometry"/>
+                </mxCell>
+                
+                <!-- VPN Connection -->
+                <mxCell id="vpn-connection" value="IPsec VPN Tunnel&#xa;Status: Connected ✅" style="endArrow=classic;startArrow=classic;html=1;strokeColor=#D32F2F;strokeWidth=3;fontSize=11;fontColor=#D32F2F;fontStyle=1;dashed=1;" edge="1" parent="1" source="tgw" target="vpn-gateway">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="400" y="500" as="sourcePoint"/>
+                        <mxPoint x="450" y="450" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                
+                <!-- Seoul IDC VPN Connection -->
+                <mxCell id="seoul-idc-vpn" value="VPN Tunnel" style="endArrow=classic;startArrow=classic;html=1;strokeColor=#FBC02D;strokeWidth=2;fontSize=10;fontColor=#FBC02D;fontStyle=1;dashed=1;" edge="1" parent="1" source="tgw" target="seoul-cgw">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="280" y="640" as="sourcePoint"/>
+                        <mxPoint x="280" y="700" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                
+                <!-- DMS Connection -->
+                <mxCell id="dms-connection" value="DMS Replication&#xa;Aurora → Azure MySQL ✅" style="endArrow=classic;html=1;strokeColor=#388E3C;strokeWidth=3;fontSize=11;fontColor=#388E3C;fontStyle=1;" edge="1" parent="1" source="aurora" target="mysql">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="400" y="500" as="sourcePoint"/>
+                        <mxPoint x="450" y="450" as="targetPoint"/>
+                        <Array as="points">
+                            <mxPoint x="300" y="750"/>
+                            <mxPoint x="1100" y="750"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                
+                <!-- Route 53 -->
+                <mxCell id="route53" value="Route 53&#xa;pdwo610.shop" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#4D27AA;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;fontStyle=1;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.route_53;" vertex="1" parent="1">
+                    <mxGeometry x="580" y="10" width="50" height="50" as="geometry"/>
+                </mxCell>
+                
+                <!-- ECR -->
+                <mxCell id="ecr" value="AWS ECR&#xa;Frontend Image" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#ED7100;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;fontStyle=1;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.ecr_image;" vertex="1" parent="1">
+                    <mxGeometry x="1320" y="10" width="50" height="50" as="geometry"/>
+                </mxCell>
+                
+                <!-- Route 53 to ALB -->
+                <mxCell id="r53-to-alb" value="Primary" style="endArrow=classic;html=1;strokeColor=#1976D2;strokeWidth=2;fontSize=10;fontColor=#1976D2;" edge="1" parent="1" source="route53" target="alb">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="400" y="300" as="sourcePoint"/>
+                        <mxPoint x="450" y="250" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                
+                <!-- Route 53 to App Service -->
+                <mxCell id="r53-to-app" value="Failover" style="endArrow=classic;html=1;strokeColor=#F57C00;strokeWidth=2;fontSize=10;fontColor=#F57C00;dashed=1;" edge="1" parent="1" source="route53" target="app-service">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="400" y="300" as="sourcePoint"/>
+                        <mxPoint x="450" y="250" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                
+                <!-- ECR to App Service -->
+                <mxCell id="ecr-to-app" value="Container Pull" style="endArrow=classic;html=1;strokeColor=#ED7100;strokeWidth=2;fontSize=10;fontColor=#ED7100;dashed=1;" edge="1" parent="1" source="ecr" target="app-service">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="900" y="300" as="sourcePoint"/>
+                        <mxPoint x="950" y="250" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                
+                <!-- Legend -->
+                <mxCell id="legend" value="Legend:&#xa;✅ Active  🔴 Deleted  ⏳ Pending&#xa;━━ Active Connection&#xa;╌╌ Failover Connection" style="text;html=1;strokeColor=#666666;fillColor=#F5F5F5;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=10;fontColor=#333333;" vertex="1" parent="1">
+                    <mxGeometry x="40" y="770" width="200" height="70" as="geometry"/>
+                </mxCell>
+                
+                <!-- Status Info -->
+                <mxCell id="status" value="Infrastructure Status:&#xa;• AWS Seoul VPC: ✅ Active&#xa;• Azure Korea Central VNet: ✅ Active&#xa;• VPN Connection: ✅ Connected&#xa;• DMS Migration: ✅ Completed&#xa;• Tokyo Region: 🔴 Deleted" style="text;html=1;strokeColor=#666666;fillColor=#FFF9C4;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=10;fontColor=#333333;" vertex="1" parent="1">
+                    <mxGeometry x="930" y="770" width="200" height="110" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

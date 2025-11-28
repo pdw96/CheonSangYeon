@@ -294,6 +294,12 @@ resource "aws_iam_role_policy_attachment" "beanstalk_ec2_multicontainer" {
   policy_arn = "arn:aws:iam::aws:policy/AWSElasticBeanstalkMulticontainerDocker"
 }
 
+resource "aws_iam_role_policy_attachment" "beanstalk_ec2_ecr_readonly" {
+  provider   = aws.tokyo
+  role       = aws_iam_role.beanstalk_ec2.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+}
+
 resource "aws_iam_instance_profile" "beanstalk_ec2" {
   provider = aws.tokyo
   name     = "tokyo-beanstalk-ec2-profile"
@@ -305,7 +311,7 @@ resource "aws_elastic_beanstalk_environment" "tokyo_env" {
   provider            = aws.tokyo
   name                = "tokyo-webapp-env"
   application         = aws_elastic_beanstalk_application.tokyo_app.name
-  solution_stack_name = "64bit Amazon Linux 2023 v4.7.5 running Python 3.11"
+  solution_stack_name = "64bit Amazon Linux 2023 v4.8.0 running Docker"
   tier                = "WebServer"
 
   setting {

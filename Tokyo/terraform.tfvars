@@ -1,2 +1,2 @@
-tokyo_key_name       = "cloudupconJapan"
-ssh_private_key_path = "./cloudupconJapan.pem"
+tokyo_key_name       = "cheonsangyeonjapan"
+ssh_private_key_path = "./cheonsangyeonjapan.pem"

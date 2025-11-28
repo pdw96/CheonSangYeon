@@ -18,13 +18,18 @@ output "target_endpoint_arn" {
   value       = aws_dms_endpoint.target_aurora_mysql.endpoint_arn
 }
 
+output "target_azure_endpoint_arn" {
+  description = "ARN of the Target Endpoint (Azure MySQL)"
+  value       = aws_dms_endpoint.target_azure_mysql.endpoint_arn
+}
+
 output "migration_task_arn" {
-  description = "ARN of the Migration Task"
+  description = "ARN of the Migration Task (Aurora)"
   value       = aws_dms_replication_task.migration_task.replication_task_arn
 }
 
 output "migration_status" {
-  description = "Status of the Migration Task"
+  description = "Status of the Migration Task (Aurora)"
   value       = aws_dms_replication_task.migration_task.status
 }
 
@@ -50,7 +55,6 @@ output "migration_instructions" {
     
     마이그레이션 단계:
     - Full Load: IDC MySQL의 모든 데이터를 Aurora로 복사
-    - CDC (Change Data Capture): 실시간 변경사항 동기화
     
     Source: ${data.aws_instance.idc_db.private_ip}:3306/idcdb
     Target: ${aws_dms_endpoint.target_aurora_mysql.server_name}:3306/globaldb

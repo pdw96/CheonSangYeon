@@ -3,6 +3,11 @@ output "route53_zone_id" {
   value       = aws_route53_zone.main.zone_id
 }
 
+output "hosted_zone_id" {
+  description = "Route 53 Hosted Zone ID (alias for compatibility)"
+  value       = aws_route53_zone.main.zone_id
+}
+
 output "route53_name_servers" {
   description = "Route 53 Name Servers (configure these at your domain registrar)"
   value       = aws_route53_zone.main.name_servers
