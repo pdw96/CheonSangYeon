@@ -51,7 +51,6 @@ data "aws_instance" "idc_db" {
 
 locals {
   dms_subnet_ids = data.terraform_remote_state.vpc.outputs.seoul_private_beanstalk_subnet_ids
-  azure_mysql_private_ip = "50.0.2.4"  # Azure MySQL Flexible Server Private IP
 }
 
 # DMS Subnet Group
@@ -64,31 +63,6 @@ resource "aws_dms_replication_subnet_group" "dms_subnet_group" {
   tags = {
     Name = "dms-aurora-migration-subnet-group"
   }
-}
-
-# Route53 Private Hosted Zone for Azure MySQL DNS Resolution
-resource "aws_route53_zone" "azure_mysql_private" {
-  provider = aws.seoul
-  name     = "mysql.database.azure.com"
-
-  vpc {
-    vpc_id = data.terraform_remote_state.vpc.outputs.seoul_vpc_id
-  }
-
-  tags = {
-    Name = "azure-mysql-private-dns"
-    Purpose = "Resolve Azure MySQL FQDN to Private IP via VPN"
-  }
-}
-
-# Route53 A Record for Azure MySQL
-resource "aws_route53_record" "azure_mysql" {
-  provider = aws.seoul
-  zone_id  = aws_route53_zone.azure_mysql_private.zone_id
-  name     = "mysql-dr-multicloud.mysql.database.azure.com"
-  type     = "A"
-  ttl      = 300
-  records  = [local.azure_mysql_private_ip]
 }
 
 # DMS IAM Roles
@@ -250,16 +224,6 @@ data "terraform_remote_state" "aurora" {
   }
 }
 
-# Get Azure DR infrastructure state
-data "terraform_remote_state" "azure_dr" {
-  backend = "s3"
-  config = {
-    bucket = "terraform-s3-cheonsangyeon"
-    key    = "terraform/azure-dr/terraform.tfstate"
-    region = "ap-northeast-2"
-  }
-}
-
 # Target Endpoint (Aurora MySQL)
 resource "aws_dms_endpoint" "target_aurora_mysql" {
   provider      = aws.seoul
@@ -275,26 +239,6 @@ resource "aws_dms_endpoint" "target_aurora_mysql" {
 
   tags = {
     Name = "target-aurora-mysql"
-  }
-}
-
-# Target Endpoint (Azure MySQL Flexible Server via VPN)
-resource "aws_dms_endpoint" "target_azure_mysql" {
-  provider      = aws.seoul
-  endpoint_id   = "target-azure-mysql"
-  endpoint_type = "target"
-  engine_name   = "mysql"
-  server_name   = data.terraform_remote_state.azure_dr.outputs.mysql_server_fqdn
-  port          = 3306
-  database_name = "globaldb"
-  username      = var.azure_mysql_username
-  password      = var.azure_mysql_password
-  ssl_mode      = "none"
-
-  extra_connection_attributes = "initstmt=SET FOREIGN_KEY_CHECKS=0"
-
-  tags = {
-    Name = "target-azure-mysql-dr"
   }
 }
 
