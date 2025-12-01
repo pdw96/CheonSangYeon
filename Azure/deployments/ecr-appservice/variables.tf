@@ -23,7 +23,7 @@ variable "web_app_name" {
 variable "ecr_registry_url" {
   description = "AWS ECR registry URL (without https://)"
   type        = string
-  default     = "299145660695.dkr.ecr.ap-northeast-2.amazonaws.com"
+  default     = "150502622488.dkr.ecr.ap-northeast-2.amazonaws.com"
 }
 
 variable "ecr_image_name" {

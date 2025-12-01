@@ -11,32 +11,32 @@ output "mysql_database_name" {
   value       = module.dms_integration.database_name
 }
 
-# ECR App Service Module (별도 배포)
-# output "web_app_url" {
-#   description = "Web App URL"
-#   value       = module.ecr_appservice.web_app_url
-# }
+# ECR App Service Module (deploy_app_service = true 시 배포)
+output "web_app_url" {
+  description = "Web App URL"
+  value       = var.deploy_app_service ? module.ecr_appservice[0].web_app_url : null
+}
 
-# output "web_app_default_hostname" {
-#   description = "Web App default hostname"
-#   value       = module.ecr_appservice.web_app_default_hostname
-# }
+output "web_app_default_hostname" {
+  description = "Web App default hostname"
+  value       = var.deploy_app_service ? module.ecr_appservice[0].web_app_default_hostname : null
+}
 
-# output "web_app_outbound_ips" {
-#   description = "Web App outbound IP addresses"
-#   value       = module.ecr_appservice.outbound_ip_addresses
-# }
+output "web_app_outbound_ips" {
+  description = "Web App outbound IP addresses"
+  value       = var.deploy_app_service ? module.ecr_appservice[0].outbound_ip_addresses : null
+}
 
-# Route53 Health Check Module (ECR App Service 배포 후 활성화)
-# output "route53_health_check_id" {
-#   description = "Route53 Health Check ID"
-#   value       = module.route53_healthcheck.health_check_id
-# }
+# Route53 Health Check Module (App Service 배포 시 자동 생성)
+output "route53_health_check_id" {
+  description = "Route53 Health Check ID"
+  value       = var.deploy_app_service ? module.route53_healthcheck[0].health_check_id : null
+}
 
-# output "cloudwatch_alarm_arn" {
-#   description = "CloudWatch alarm ARN"
-#   value       = module.route53_healthcheck.unhealthy_alarm_arn
-# }
+output "cloudwatch_alarm_arn" {
+  description = "CloudWatch alarm ARN"
+  value       = var.deploy_app_service ? module.route53_healthcheck[0].unhealthy_alarm_arn : null
+}
 
 # AWS DMS Migration Module
 output "dms_migration_task_arn" {
@@ -134,8 +134,25 @@ output "mysql_connection_info" {
 output "dr_endpoints" {
   description = "DR endpoints for failover"
   value = {
-    web_app     = "https://webapp-dr-multicloud.azurewebsites.net"  # ECR App Service 배포 후 업데이트
-    health_check = "https://webapp-dr-multicloud.azurewebsites.net/health"
+    web_app      = var.deploy_app_service ? "https://${module.ecr_appservice[0].web_app_default_hostname}" : "Not deployed - set deploy_app_service = true"
+    health_check = var.deploy_app_service ? "https://${module.ecr_appservice[0].web_app_default_hostname}/health" : "Not deployed"
     database     = module.dms_integration.mysql_server_fqdn
   }
+}
+
+# ===== Route53 Private Hosted Zone =====
+
+output "route53_private_zone_id" {
+  description = "Route53 Private Hosted Zone ID for Azure MySQL"
+  value       = aws_route53_zone.azure_mysql_private.zone_id
+}
+
+output "route53_private_zone_name" {
+  description = "Route53 Private Hosted Zone name"
+  value       = aws_route53_zone.azure_mysql_private.name
+}
+
+output "azure_mysql_private_dns" {
+  description = "Azure MySQL Private DNS record for AWS resolution"
+  value       = "${aws_route53_record.azure_mysql.name}.${aws_route53_zone.azure_mysql_private.name}"
 }

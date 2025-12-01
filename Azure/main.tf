@@ -251,76 +251,116 @@ module "dms_integration" {
   ]
 }
 
-# ===== Module: ECR App Service =====
-# NOTE: ECR App Service는 별도 배포 필요
-# 위치: Azure/deployments/ecr-appservice/
-# 사용법: cd deployments/ecr-appservice && terraform init && terraform apply
+# ===== AWS Route53 Private Hosted Zone for Azure MySQL =====
+# AWS에서 Azure MySQL Private DNS를 해석하기 위한 Private Hosted Zone
 
-# module "ecr_appservice" {
-#   source = "./modules/ecr-appservice"
-#
-#   resource_group_name    = azurerm_resource_group.dr.name
-#   location               = azurerm_resource_group.dr.location
-#   app_service_plan_name  = var.app_service_plan_name
-#   app_service_sku        = var.app_service_sku
-#   web_app_name           = var.web_app_name
-#
-#   # ECR 설정
-#   ecr_registry_url = var.ecr_registry_url
-#   ecr_image_name   = var.ecr_image_name
-#   ecr_username     = var.ecr_username
-#   ecr_password     = var.ecr_password
-#
-#   # VNet 통합
-#   vnet_integration_enabled = true
-#   app_subnet_id            = azurerm_subnet.app.id
-#
-#   # 데이터베이스 연결
-#   database_connection_enabled = true
-#   db_host                     = module.dms_integration.mysql_server_fqdn
-#   db_name                     = module.dms_integration.database_name
-#   db_user                     = var.mysql_admin_username
-#   db_password                 = var.mysql_admin_password
-#   db_port                     = "3306"
-#
-#   tags = {
-#     Environment = "DR"
-#     Purpose     = "DR Web Application with ECR"
-#   }
-#
-#   depends_on = [
-#     module.dms_integration,
-#     azurerm_subnet.app
-#   ]
-# }
+resource "aws_route53_zone" "azure_mysql_private" {
+  provider = aws.seoul
+  name     = "private.mysql.database.azure.com"
+  comment  = "Private Hosted Zone for Azure MySQL resolution from AWS"
+
+  vpc {
+    vpc_id     = data.terraform_remote_state.seoul.outputs.seoul_vpc_id
+    vpc_region = "ap-northeast-2"
+  }
+
+  tags = {
+    Name        = "azure-mysql-private-zone"
+    Environment = "DR"
+    Purpose     = "Azure MySQL DNS Resolution"
+    ManagedBy   = "Terraform-Azure-Module"
+  }
+}
+
+# Azure MySQL Private IP를 위한 A 레코드
+resource "aws_route53_record" "azure_mysql" {
+  provider = aws.seoul
+  zone_id  = aws_route53_zone.azure_mysql_private.zone_id
+  name     = "mysql-dr-multicloud"
+  type     = "A"
+  ttl      = 300
+  records  = ["50.0.2.4"]  # Azure MySQL Private IP
+
+  depends_on = [
+    module.dms_integration
+  ]
+}
+
+# ===== Module: ECR App Service =====
+# ECR 이미지가 준비된 후 deploy_app_service = true로 설정하여 배포
+# 프론트엔드 CI/CD 담당자가 ECR에 이미지 푸시 후 진행
+
+module "ecr_appservice" {
+  source = "./modules/ecr-appservice"
+  count  = var.deploy_app_service ? 1 : 0
+
+  resource_group_name   = azurerm_resource_group.dr.name
+  location              = azurerm_resource_group.dr.location
+  app_service_plan_name = var.app_service_plan_name
+  app_service_sku       = var.app_service_sku
+  web_app_name          = var.web_app_name
+
+  # ECR 설정 (AWS Beanstalk와 동일한 이미지 사용)
+  ecr_registry_url = var.ecr_registry_url
+  ecr_image_name   = var.ecr_image_name
+  ecr_username     = var.ecr_username
+  ecr_password     = var.ecr_password
+
+  # VNet 통합
+  vnet_integration_enabled = true
+  app_subnet_id            = azurerm_subnet.app.id
+
+  # 데이터베이스 연결 (Azure MySQL)
+  database_connection_enabled = true
+  db_host                     = module.dms_integration.mysql_server_fqdn
+  db_name                     = module.dms_integration.database_name
+  db_user                     = var.mysql_admin_username
+  db_password                 = var.mysql_admin_password
+  db_port                     = "3306"
+
+  tags = {
+    Environment = "DR"
+    Purpose     = "DR Web Application with ECR"
+  }
+
+  depends_on = [
+    module.dms_integration,
+    azurerm_subnet.app
+  ]
+}
 
 # ===== Module: Route53 Health Check =====
-# NOTE: ECR App Service 배포 후 endpoint_fqdn을 수동으로 설정하세요
+# App Service 배포 후 자동으로 Health Check 생성
 
-# module "route53_healthcheck" {
-#   source = "./modules/route53-healthcheck"
-#
-#   providers = {
-#     aws = aws.seoul
-#   }
-#
-#   endpoint_fqdn      = "webapp-dr-multicloud.azurewebsites.net"  # ECR App Service 배포 후 업데이트
-#   endpoint_port      = 443
-#   health_check_type  = "HTTPS"
-#   health_check_path  = "/health"
-#   health_check_name  = "azure-dr-health-check"
-#   
-#   alarm_name        = "azure-dr-endpoint-unhealthy"
-#   alarm_description = "Alert when Azure DR endpoint is unhealthy"
-#
-#   enable_latency_alarm = true
-#   latency_threshold_ms = 1000
-#
-#   tags = {
-#     Environment = "DR"
-#     Target      = "Azure"
-#   }
-# }
+module "route53_healthcheck" {
+  source = "./modules/route53-healthcheck"
+  count  = var.deploy_app_service ? 1 : 0
+
+  providers = {
+    aws = aws.seoul
+  }
+
+  endpoint_fqdn      = module.ecr_appservice[0].web_app_default_hostname
+  endpoint_port      = 443
+  health_check_type  = "HTTPS"
+  health_check_path  = "/health"
+  health_check_name  = "azure-dr-health-check"
+
+  alarm_name        = "azure-dr-endpoint-unhealthy"
+  alarm_description = "Alert when Azure DR endpoint is unhealthy"
+
+  enable_latency_alarm = true
+  latency_threshold_ms = 1000
+
+  tags = {
+    Environment = "DR"
+    Target      = "Azure"
+  }
+
+  depends_on = [
+    module.ecr_appservice
+  ]
+}
 
 # ===== Module: AWS DMS Migration (Aurora → Azure MySQL) =====
 

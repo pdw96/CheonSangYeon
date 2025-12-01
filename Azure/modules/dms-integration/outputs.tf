@@ -28,3 +28,13 @@ output "connection_string" {
   value       = "Server=${azurerm_mysql_flexible_server.dms_target.fqdn};Database=${azurerm_mysql_flexible_database.app_db.name};Uid=${var.mysql_admin_username}"
   sensitive   = false
 }
+
+output "mysql_private_ip" {
+  description = "MySQL Flexible Server Private IP address"
+  value       = azurerm_mysql_flexible_server.dms_target.fqdn
+}
+
+output "private_dns_zone_name" {
+  description = "Private DNS Zone name"
+  value       = azurerm_private_dns_zone.mysql.name
+}

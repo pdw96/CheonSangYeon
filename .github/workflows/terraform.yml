@@ -683,6 +683,13 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      - name: Get ECR Auth Token
+        id: ecr-login
+        run: |
+          ECR_TOKEN=$(aws ecr get-login-password --region ${{ env.AWS_REGION }})
+          echo "::add-mask::$ECR_TOKEN"
+          echo "token=$ECR_TOKEN" >> $GITHUB_OUTPUT
+
       - name: Create tfvars
         working-directory: Azure
         run: |
@@ -691,6 +698,13 @@ jobs:
           mysql_admin_password = "${{ secrets.AZURE_MYSQL_PASSWORD }}"
           vpn_shared_key       = "${{ secrets.VPN_SHARED_KEY }}"
           alert_email          = "${{ secrets.ALERT_EMAIL }}"
+          
+          # ECR App Service 배포 설정
+          deploy_app_service = ${{ secrets.DEPLOY_APP_SERVICE || 'false' }}
+          ecr_registry_url   = "${{ secrets.ECR_REGISTRY_URL }}"
+          ecr_image_name     = "${{ secrets.ECR_IMAGE_NAME }}"
+          ecr_username       = "AWS"
+          ecr_password       = "${{ steps.ecr-login.outputs.token }}"
           EOF
 
       - name: Terraform Init
